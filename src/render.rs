@@ -33,6 +33,9 @@ pub struct RenderRequest {
     pub audio_bitrate: u64,
     pub width: u32,
     pub height: u32,
+    /// Replace `output` if it already exists. Off by default so a test run can
+    /// never write over a finished sermon.
+    pub overwrite: bool,
 }
 
 /// Everything ffmpeg needs, after probing the inputs and choosing an encoder.
@@ -252,6 +255,12 @@ impl Plan {
 
 /// Checks the request against the actual files and picks an encoder.
 pub fn plan(tools: &Tools, req: &RenderRequest) -> Result<Plan> {
+    if req.output.exists() && !req.overwrite {
+        bail!(
+            "{} already exists; choose another name or pass --overwrite to replace it",
+            req.output.display()
+        );
+    }
     if !(req.cut_in.is_finite() && req.cut_in >= 0.0) {
         bail!("In must be zero or later");
     }

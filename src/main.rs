@@ -107,6 +107,9 @@ enum Command {
         /// Skip the self-check after exporting.
         #[arg(long)]
         no_verify: bool,
+        /// Replace the output file if it already exists.
+        #[arg(long)]
+        overwrite: bool,
     },
 
     /// Check an exported file: format, length, banner at both ends, quiet first and last moments.
@@ -205,6 +208,7 @@ fn run(cli: Cli, sink: &dyn Sink) -> Result<()> {
             audio_bitrate,
             size,
             no_verify,
+            overwrite,
         } => {
             let timings = Timings {
                 open_hold,
@@ -225,6 +229,7 @@ fn run(cli: Cli, sink: &dyn Sink) -> Result<()> {
                 audio_bitrate,
                 width: size.0,
                 height: size.1,
+                overwrite,
             };
             let outcome = render::render(&tools, &req, sink)?;
             sink.emit(Event::result(render::STEP, serde_json::to_value(&outcome)?));

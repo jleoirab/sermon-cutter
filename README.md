@@ -28,10 +28,10 @@ $B render \
   --source ~/Movies/SermonCutter/iz0PPVUleUw.video.mp4 \
   --banner "$HOME/Documents/CCIKW/Service/Oct 11th 2026/YOUR-MOUNTAIN-16BY9.webp" \
   --in 1:21:05 --out 2:35:00 \
-  -o "$HOME/Documents/CCIKW/Service/Oct 11th 2026/Sun Oct 11th Sermon.mp4"
+  -o "$HOME/Movies/SermonCutter/Oct 11 test.mp4"
 ```
 
-`render` checks its own output and fails if the check fails; pass `--no-verify` to skip the check.
+`render` checks its own output and fails if the check fails; pass `--no-verify` to skip the check. It never replaces an existing file unless you pass `--overwrite`, so a test run can't write over a finished sermon.
 
 ## Commands
 
@@ -56,7 +56,7 @@ Banner and fade timings, with defaults taken from the Oct 4 and Oct 11 reference
 | `--fade-in` | 4 | Seconds the audio rises from silence, from the first frame |
 | `--fade-out` | 3 | Seconds the audio falls to silence, ending on the last frame |
 
-Other options: `--encoder auto|h264_videotoolbox|libx264|...`, `--video-bitrate 6M`, `--audio-bitrate 192k`.
+Other options: `--encoder auto|h264_videotoolbox|libx264|...`, `--video-bitrate 6M`, `--audio-bitrate 192k`, `--overwrite`.
 
 ## Output: one JSON object per line
 

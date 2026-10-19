@@ -70,6 +70,7 @@ fn request(source: PathBuf, banner: PathBuf, output: PathBuf) -> RenderRequest {
         audio_bitrate: 128_000,
         width: 640,
         height: 360,
+        overwrite: false,
     }
 }
 
@@ -277,10 +278,29 @@ fn refuses_impossible_requests() {
     let e = render(&t, &backwards, &sink).unwrap_err().to_string();
     assert!(e.contains("must come after In"), "{e}");
 
-    let mut too_short = request(source, banner, dir.path().join("c.mp4"));
+    let mut too_short = request(source.clone(), banner.clone(), dir.path().join("c.mp4"));
     too_short.cut_out = 12.0; // 7 s cut, banners need 8 s
     let e = render(&t, &too_short, &sink).unwrap_err().to_string();
     assert!(e.contains("banners need"), "{e}");
+
+    // An existing file, such as last week's finished sermon, is left alone.
+    let existing = dir.path().join("Sun Oct 11th Sermon.mp4");
+    std::fs::write(&existing, b"the real sermon").unwrap();
+    let e = render(
+        &t,
+        &request(source.clone(), banner.clone(), existing.clone()),
+        &sink,
+    )
+    .unwrap_err()
+    .to_string();
+    assert!(e.contains("already exists"), "{e}");
+    assert_eq!(std::fs::read(&existing).unwrap(), b"the real sermon");
+
+    // ...unless the caller asks to replace it.
+    let mut replace = request(source, banner, existing.clone());
+    replace.overwrite = true;
+    render(&t, &replace, &sink).expect("render with overwrite");
+    assert!(std::fs::metadata(&existing).unwrap().len() > 1000);
 }
 
 /// Time of the first frame brighter than `min_luma`.
