@@ -18,6 +18,12 @@ final class CoreTests: XCTestCase {
         XCTAssertNil(Sunday.videoID(from: "hello"))
     }
 
+    func testDriveLinks() {
+        XCTAssertEqual(DriveLink.fileID("https://drive.google.com/file/d/1AbC_x-9/view?usp=sharing"), "1AbC_x-9")
+        XCTAssertEqual(DriveLink.fileID("https://drive.google.com/open?id=1AbC"), "1AbC")
+        XCTAssertNil(DriveLink.fileID("https://example.com/file/d/1AbC/view"))
+    }
+
     func testDecodesEngineResults() throws {
         let find = #"{"event":"result","step":"find","data":{"in":4296.0,"in_tc":"1:11:36.000","out":8959.18,"out_tc":"2:29:19.180","lead_in":360.0,"preacher_starts":4658,"preacher_starts_tc":"1:17:38.000","start_confidence":"high","out_confidence":"medium","out_method":"seat_cue","out_cue":{"at":8953.7,"out":8959.18,"context":"God bless you. Please be seated. Thank you Jesus.","after_prayer":true,"before_offering":false,"before_next_part":true},"cues":[],"speech_run_ends":10044,"speech_run_ends_tc":"2:47:24.000","speech_seconds":4000,"dead_air_seconds":0,"heard":[6158.0,9158.0],"stream_seconds":10044.0,"runs":[{"start":0,"end":60,"kind":"music"}]}}"#
         let run = EngineRun(results: ["find": Data(find.utf8)])

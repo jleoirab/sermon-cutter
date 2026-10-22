@@ -326,6 +326,27 @@ final class SundayModel: ObservableObject {
         save()
     }
 
+    /// Downloads a banner shared on Google Drive with "anyone with the link".
+    func fetchBanner(from link: String) async throws {
+        guard let fileID = DriveLink.fileID(link) else {
+            throw EngineError.failed(step: "banner", message: "That isn't a Google Drive file link.")
+        }
+        let (data, response) = try await URLSession.shared.data(from: DriveLink.downloadURL(fileID))
+        let type = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type") ?? ""
+        guard type.hasPrefix("image/") else {
+            throw EngineError.failed(
+                step: "banner",
+                message: "Drive didn't hand over an image. Share the banner with “Anyone with the link”, or download it and drop the file here."
+            )
+        }
+        let ext = type.contains("png") ? "png" : type.contains("webp") ? "webp" : "jpg"
+        let base = sunday.id ?? "banner"
+        let file = folders.work.appendingPathComponent("\(base).banner.\(ext)")
+        try FileManager.default.createDirectory(at: folders.work, withIntermediateDirectories: true)
+        try data.write(to: file, options: .atomic)
+        setBanner(file)
+    }
+
     func setBanner(_ url: URL) {
         sunday.bannerPath = url.path
         save()

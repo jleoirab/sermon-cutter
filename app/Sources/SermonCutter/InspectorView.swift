@@ -258,6 +258,9 @@ struct BannerSection: View {
     @ObservedObject var model: SundayModel
     @State private var choosing = false
     @State private var targeted = false
+    @State private var link = ""
+    @State private var fetching = false
+    @State private var linkError: String?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -292,9 +295,37 @@ struct BannerSection: View {
                 Spacer()
                 Button("Choose…") { choosing = true }
             }
+            HStack {
+                TextField("or paste a Google Drive link", text: $link)
+                    .textFieldStyle(.roundedBorder)
+                    .onSubmit(fetch)
+                if fetching {
+                    ProgressView().controlSize(.small)
+                } else {
+                    Button("Get", action: fetch).disabled(DriveLink.fileID(link) == nil)
+                }
+            }
+            if let linkError {
+                Text(linkError).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
+            }
         }
         .fileImporter(isPresented: $choosing, allowedContentTypes: [.png, .jpeg, .webP, .image]) { result in
             if case .success(let url) = result { model.setBanner(url) }
+        }
+    }
+
+    private func fetch() {
+        guard DriveLink.fileID(link) != nil, !fetching else { return }
+        fetching = true
+        linkError = nil
+        Task {
+            do {
+                try await model.fetchBanner(from: link)
+                link = ""
+            } catch {
+                linkError = error.localizedDescription
+            }
+            fetching = false
         }
     }
 

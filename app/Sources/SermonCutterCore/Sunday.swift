@@ -117,6 +117,25 @@ public struct Folders: Equatable, Sendable {
     }
 }
 
+/// Google Drive links to a single file.
+public enum DriveLink {
+    /// The file id in links like drive.google.com/file/d/<id>/view,
+    /// drive.google.com/open?id=<id> or docs.google.com/uc?id=<id>.
+    public static func fileID(_ link: String) -> String? {
+        guard let comps = URLComponents(string: link.trimmingCharacters(in: .whitespacesAndNewlines)),
+              let host = comps.host, host.hasSuffix("google.com")
+        else { return nil }
+        let parts = comps.path.split(separator: "/").map(String.init)
+        if let i = parts.firstIndex(of: "d"), i + 1 < parts.count { return parts[i + 1] }
+        return comps.queryItems?.first(where: { $0.name == "id" })?.value
+    }
+
+    /// Where a file shared with "anyone with the link" downloads from.
+    public static func downloadURL(_ id: String) -> URL {
+        URL(string: "https://drive.google.com/uc?export=download&id=\(id)")!
+    }
+}
+
 /// Names the way the Service folder already uses them: "Sept 13th 2026",
 /// "Oct 11th Sermon.mp4".
 public enum Naming {
