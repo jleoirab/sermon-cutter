@@ -3,12 +3,13 @@
 `sermoncut` does the processing for the Sermon Cutter app:
 
 1. It downloads a stream from YouTube, audio first and then H.264 video.
-2. It cuts the sermon and lays the Sunday banner over both ends, with dissolves and audio fades.
-3. It checks the exported file before anyone uploads it.
+2. It finds where the sermon starts and ends, from the sound and the words, with no chapters needed.
+3. It cuts the sermon and lays the Sunday banner over both ends, with dissolves and audio fades.
+4. It checks the exported file before anyone uploads it.
 
 It runs the same on macOS and Windows. The Mac app, and a Windows app later, drive it as a command-line tool and read its progress as JSON.
 
-This is milestone 1 of the [Sermon Cutter PRD & Design Plan](https://claude.ai/code/artifact/159c19aa-033f-42a7-ac98-4f42af1fc993). Sermon detection, the quality check and the app itself come in later milestones.
+This is milestones 1 and 2 of the [Sermon Cutter PRD & Design Plan](https://claude.ai/code/artifact/159c19aa-033f-42a7-ac98-4f42af1fc993). The quality check and the app itself come in later milestones.
 
 ## Try it on a Mac
 
@@ -41,6 +42,8 @@ $B render \
 | `encoders` | Lists the H.264 encoders that work on this computer, best first |
 | `info <url>` | Reads the title, length, live status and best H.264 rendition, without downloading |
 | `fetch <url> [--dir D] [--part audio\|video\|both]` | Downloads the AAC audio, then H.264 video up to 1080p merged to MP4 |
+| `find <stream> [--lead-in 2:00]` | Proposes In and Out, each with a confidence, plus a map of music and speech for the timeline |
+| `align --stream --final` | Finds where a finished cut sits in its stream by matching their sound (for scoring `find` on past Sundays) |
 | `render --source --banner --in --out -o` | Cuts, adds the banner and fades, exports 1080p H.264 + AAC, then self-checks |
 | `verify --file [--banner] [--expect-duration]` | Checks format, length, banner on the first and last frames, footage mid-cut, and quiet first and last 100 ms |
 

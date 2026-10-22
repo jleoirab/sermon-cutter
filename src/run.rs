@@ -86,6 +86,52 @@ where
     Ok((status.success(), err_text))
 }
 
+/// Runs a program, handing its standard output to `on_chunk` in pieces of
+/// exactly `chunk` bytes (the last piece may be shorter). Used to read raw
+/// audio from ffmpeg without holding hours of it in memory. Returns whether
+/// the program succeeded and what it printed on standard error.
+pub fn stream_bytes<I, S, F>(program: &Path, args: I, chunk: usize, mut on_chunk: F) -> Result<(bool, String)>
+where
+    I: IntoIterator<Item = S>,
+    S: AsRef<OsStr>,
+    F: FnMut(&[u8]),
+{
+    let mut child = command(program)
+        .args(args)
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .with_context(|| format!("could not run {}", program.display()))?;
+    let mut stderr = child.stderr.take().expect("stderr is piped");
+    let err_reader = std::thread::spawn(move || {
+        let mut buf = Vec::new();
+        let _ = stderr.read_to_end(&mut buf);
+        String::from_utf8_lossy(&buf).into_owned()
+    });
+
+    let mut stdout = child.stdout.take().expect("stdout is piped");
+    let mut buf = vec![0u8; chunk];
+    let mut filled = 0;
+    loop {
+        let n = stdout.read(&mut buf[filled..])?;
+        if n == 0 {
+            break;
+        }
+        filled += n;
+        if filled == chunk {
+            on_chunk(&buf);
+            filled = 0;
+        }
+    }
+    if filled > 0 {
+        on_chunk(&buf[..filled]);
+    }
+
+    let status = child.wait()?;
+    let err_text = err_reader.join().unwrap_or_default();
+    Ok((status.success(), err_text))
+}
+
 /// The last `n` non-empty lines of a program's output, for error messages.
 pub fn tail(text: &str, n: usize) -> String {
     let lines: Vec<&str> = text

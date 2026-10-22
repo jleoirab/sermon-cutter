@@ -262,6 +262,8 @@ mod tests {
             ffprobe: None,
             ytdlp: None,
             deno: Some("/opt/d/deno".into()),
+            whisper: None,
+            whisper_model: None,
         }
     }
 

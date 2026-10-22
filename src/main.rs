@@ -13,7 +13,9 @@ use sermoncut::render::{self, RenderRequest};
 use sermoncut::timings::Timings;
 use sermoncut::tools::Tools;
 use sermoncut::verify::{self, Expect};
-use sermoncut::{encoders, parse_bitrate, timecode};
+use sermoncut::audio::{self, Features};
+use sermoncut::transcribe::{Spot, Transcriber, Transcript};
+use sermoncut::{align, analysis, cues, encoders, parse_bitrate, probe, timecode};
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -48,6 +50,43 @@ enum Command {
 
     /// Read a stream's title, length and formats without downloading it.
     Info { url: String },
+
+    /// Find the sermon in a downloaded stream and propose In and Out.
+    Find {
+        /// The downloaded stream (its audio file is enough).
+        stream: PathBuf,
+        /// Worship to keep before the preacher starts, e.g. 2:00 or 6:00.
+        #[arg(long, default_value = "2:00", value_parser = timecode::parse_arg)]
+        lead_in: f64,
+        /// Save the sound measurements here, and reuse them next time.
+        #[arg(long)]
+        cache: Option<PathBuf>,
+        /// Save the words heard here, and reuse them next time.
+        #[arg(long)]
+        transcript_cache: Option<PathBuf>,
+        /// whisper.cpp speech model (default: the tools folder's models folder).
+        #[arg(long)]
+        model: Option<PathBuf>,
+        /// Don't listen for the words; the Out is then only a rough guess.
+        #[arg(long)]
+        no_transcribe: bool,
+    },
+
+    /// Find where a finished cut sits in its stream by matching their sound.
+    Align {
+        /// The downloaded stream (its audio file is enough).
+        #[arg(long)]
+        stream: PathBuf,
+        /// The finished sermon video cut from that stream.
+        #[arg(long = "final")]
+        final_cut: PathBuf,
+        /// Save the stream's sound measurements here, and reuse them next time.
+        #[arg(long)]
+        cache: Option<PathBuf>,
+        /// Same, for the finished cut.
+        #[arg(long)]
+        final_cache: Option<PathBuf>,
+    },
 
     /// Download a stream: audio first (for analysis), then H.264 video.
     Fetch {
@@ -151,11 +190,36 @@ fn main() {
     }
 }
 
+/// Sound measurements for `file`, from `cache` when it holds them, otherwise
+/// measured now (and saved to `cache` when given).
+fn measurements(
+    tools: &Tools,
+    file: &std::path::Path,
+    cache: Option<&std::path::Path>,
+    step: &str,
+    sink: &dyn Sink,
+) -> Result<Features> {
+    if let Some(c) = cache.filter(|c| c.exists()) {
+        let text = std::fs::read_to_string(c)?;
+        if let Ok(f) = serde_json::from_str::<Features>(&text) {
+            return Ok(f);
+        }
+    }
+    let duration = probe::probe(tools.ffprobe()?, file).ok().map(|m| m.duration);
+    let f = audio::measure_file(tools.ffmpeg()?, file, duration, step, sink)?;
+    if let Some(c) = cache {
+        std::fs::write(c, serde_json::to_string(&f)?)?;
+    }
+    Ok(f)
+}
+
 fn step_name(c: &Command) -> &'static str {
     match c {
         Command::Tools => "tools",
         Command::Encoders => "encoders",
         Command::Info { .. } => "info",
+        Command::Find { .. } => "find",
+        Command::Align { .. } => "align",
         Command::Fetch { .. } => "fetch",
         Command::Render { .. } => render::STEP,
         Command::Verify { .. } => verify::STEP,
@@ -175,6 +239,116 @@ fn run(cli: Cli, sink: &dyn Sink) -> Result<()> {
         Command::Info { url } => {
             let info = fetch::info(&tools, &url)?;
             sink.emit(Event::result("info", serde_json::to_value(info)?));
+        }
+        Command::Find {
+            stream,
+            lead_in,
+            cache,
+            transcript_cache,
+            model,
+            no_transcribe,
+        } => {
+            let f = measurements(&tools, &stream, cache.as_deref(), "find_listen", sink)?;
+            let s = analysis::find_sermon(&f).ok_or_else(|| {
+                anyhow::anyhow!("no stretch of speech long enough to be a sermon was found in this stream")
+            })?;
+            let cut_in = analysis::in_point(&f, s.preacher_starts, lead_in);
+            let stream_len = f.seconds() as f64;
+            let not_before = s.preacher_starts as f64 + cues::EARLIEST_OUT;
+            let fallback = s.speech_run_ends as f64;
+
+            let mut t = transcript_cache.as_deref().map(Transcript::load).unwrap_or_default();
+            let mut heard_until = None;
+            let ear = if !no_transcribe && not_before < stream_len {
+                let model = match &model {
+                    Some(m) => m.as_path(),
+                    None => tools.whisper_model()?,
+                };
+                Some(Transcriber { ffmpeg: tools.ffmpeg()?, whisper: tools.whisper()?, model })
+            } else {
+                None
+            };
+            if let Some(ear) = &ear {
+                let until = stream_len.min(s.preacher_starts as f64 + 3.0 * 3600.0);
+                let span = until - not_before;
+                sink.emit(Event::progress("find_words", 0.0, None, None));
+                let heard = cues::listen_for_out(
+                    &mut t,
+                    not_before,
+                    not_before,
+                    until,
+                    |a, len| ear.window(&stream, a, len),
+                    |t, b| {
+                        if let Some(c) = &transcript_cache {
+                            t.save(c)?;
+                        }
+                        sink.emit(Event::progress("find_words", (b - not_before) / span, None, Some(timecode::format(b))));
+                        Ok(())
+                    },
+                )?;
+                heard_until = Some(heard);
+            }
+            let words: Vec<_> = t
+                .words
+                .iter()
+                .filter(|w| heard_until.is_none_or(|h| w.start < h))
+                .cloned()
+                .collect();
+            let mut out = cues::decide(&words, not_before, fallback);
+            if let (Some(ear), Some(cue)) = (&ear, &out.cue) {
+                let (a, len) = cues::retime_window(cue);
+                let spot = match t.spot(a, len) {
+                    Some(w) => w.to_vec(),
+                    None => {
+                        let w = ear.window(&stream, a, len)?;
+                        t.spots.push(Spot { start: a, len, words: w.clone() });
+                        if let Some(c) = &transcript_cache {
+                            t.save(c)?;
+                        }
+                        w
+                    }
+                };
+                cues::retime(&mut out, &spot);
+            }
+            sink.emit(Event::result(
+                "find",
+                json!({
+                    "in": cut_in,
+                    "in_tc": timecode::format(cut_in),
+                    "out": out.out,
+                    "out_tc": timecode::format(out.out),
+                    "lead_in": lead_in,
+                    "preacher_starts": s.preacher_starts,
+                    "preacher_starts_tc": timecode::format(s.preacher_starts as f64),
+                    "start_confidence": s.start_confidence,
+                    "out_confidence": out.confidence,
+                    "out_method": out.method,
+                    "out_cue": out.cue,
+                    "out_retimed_by": out.retimed_by,
+                    "cues": out.cues,
+                    "speech_run_ends": s.speech_run_ends,
+                    "speech_run_ends_tc": timecode::format(s.speech_run_ends as f64),
+                    "speech_seconds": s.speech_seconds,
+                    "dead_air_seconds": s.dead_air_seconds,
+                    "heard": heard_until.map(|h| json!([not_before, h])),
+                    "stream_seconds": stream_len,
+                    "runs": s.runs,
+                }),
+            ));
+        }
+        Command::Align {
+            stream,
+            final_cut,
+            cache,
+            final_cache,
+        } => {
+            let s = measurements(&tools, &stream, cache.as_deref(), "align_stream", sink)?;
+            let f = measurements(&tools, &final_cut, final_cache.as_deref(), "align_final", sink)?;
+            let a = align::align(&s.env, &f.env)?;
+            let mut v = serde_json::to_value(&a)?;
+            v["in_tc"] = json!(timecode::format(a.cut_in));
+            v["out_tc"] = json!(timecode::format(a.cut_out));
+            sink.emit(Event::result("align", v));
         }
         Command::Fetch {
             url,

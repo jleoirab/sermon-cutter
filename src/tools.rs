@@ -16,20 +16,59 @@ pub struct Tools {
     pub ffprobe: Option<PathBuf>,
     pub ytdlp: Option<PathBuf>,
     pub deno: Option<PathBuf>,
+    /// whisper.cpp's command-line tool, for hearing the "have your seats" cue.
+    pub whisper: Option<PathBuf>,
+    /// The speech model whisper.cpp uses.
+    pub whisper_model: Option<PathBuf>,
 }
+
+/// Speech models to look for in `<tools folder>/models`, best first.
+pub const WHISPER_MODELS: &[&str] = &[
+    "ggml-small.en-q8_0.bin",
+    "ggml-small.en.bin",
+    "ggml-small.en-q5_1.bin",
+    "ggml-base.en.bin",
+    "ggml-base.en-q8_0.bin",
+];
 
 impl Tools {
     /// Looks up every tool, using `tools_dir` or the default tools folder.
     pub fn locate(tools_dir: Option<PathBuf>) -> Tools {
         let dir = tools_dir.or_else(default_tools_dir);
         let d = dir.as_deref();
+        let whisper_model = std::env::var_os("SERMONCUT_WHISPER_MODEL")
+            .map(PathBuf::from)
+            .filter(|p| p.is_file())
+            .or_else(|| {
+                let models = d?.join("models");
+                WHISPER_MODELS.iter().map(|m| models.join(m)).find(|p| p.is_file())
+            });
         Tools {
             ffmpeg: find(&["ffmpeg"], "SERMONCUT_FFMPEG", d),
             ffprobe: find(&["ffprobe"], "SERMONCUT_FFPROBE", d),
             ytdlp: find(&["yt-dlp", "yt-dlp_macos"], "SERMONCUT_YTDLP", d),
             deno: find(&["deno"], "SERMONCUT_DENO", d),
+            whisper: find(&["whisper-cli", "whisper-cpp"], "SERMONCUT_WHISPER", d),
+            whisper_model,
             tools_dir: dir,
         }
+    }
+
+    pub fn whisper(&self) -> Result<&Path> {
+        self.whisper
+            .as_deref()
+            .ok_or_else(|| self.missing("whisper-cli (whisper.cpp)", "SERMONCUT_WHISPER"))
+    }
+
+    pub fn whisper_model(&self) -> Result<&Path> {
+        self.whisper_model.as_deref().ok_or_else(|| {
+            let models = self
+                .tools_dir
+                .as_ref()
+                .map(|d| d.join("models").display().to_string())
+                .unwrap_or_else(|| "the tools folder's models folder".into());
+            anyhow!("no speech model found; put ggml-small.en-q8_0.bin in {models} or set SERMONCUT_WHISPER_MODEL")
+        })
     }
 
     pub fn ffmpeg(&self) -> Result<&Path> {

@@ -8,6 +8,10 @@
 //! Apps run the `sermoncut` command-line tool and read one JSON object per line
 //! from its standard output (see [`events`]).
 
+pub mod align;
+pub mod analysis;
+pub mod audio;
+pub mod cues;
 pub mod encoders;
 pub mod events;
 pub mod fetch;
@@ -17,6 +21,7 @@ pub mod run;
 pub mod timecode;
 pub mod timings;
 pub mod tools;
+pub mod transcribe;
 pub mod verify;
 
 /// Formats seconds for an ffmpeg option or filter argument: up to three decimals,
