@@ -6,6 +6,13 @@
 use anyhow::{bail, Result};
 use serde::{Deserialize, Serialize};
 
+/// One end of the cut.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum End {
+    Opening,
+    Closing,
+}
+
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub struct Timings {
     /// Seconds the banner covers the footage, fully opaque, at the start.
@@ -18,6 +25,18 @@ pub struct Timings {
     pub fade_in: f64,
     /// Seconds the audio takes to fall to silence, ending on the last frame.
     pub fade_out: f64,
+    /// Whether the banner covers the start at all (off when previewing only
+    /// the closing).
+    #[serde(default = "on")]
+    pub opening: bool,
+    /// Whether the banner covers the end at all (off when previewing only the
+    /// opening).
+    #[serde(default = "on")]
+    pub closing: bool,
+}
+
+fn on() -> bool {
+    true
 }
 
 impl Default for Timings {
@@ -28,6 +47,8 @@ impl Default for Timings {
             close_hold: 6.0,
             fade_in: 4.0,
             fade_out: 3.0,
+            opening: true,
+            closing: true,
         }
     }
 }
@@ -35,12 +56,29 @@ impl Default for Timings {
 impl Timings {
     /// True when the opening banner appears at all.
     pub fn has_opening(&self) -> bool {
-        self.open_hold + self.dissolve > 0.0
+        self.opening && self.open_hold + self.dissolve > 0.0
     }
 
     /// True when the closing banner appears at all.
     pub fn has_closing(&self) -> bool {
-        self.close_hold + self.dissolve > 0.0
+        self.closing && self.close_hold + self.dissolve > 0.0
+    }
+
+    /// The timings for a preview of just one end: the other end's banner and
+    /// fade are left off.
+    pub fn only(self, end: End) -> Timings {
+        match end {
+            End::Opening => Timings {
+                closing: false,
+                fade_out: 0.0,
+                ..self
+            },
+            End::Closing => Timings {
+                opening: false,
+                fade_in: 0.0,
+                ..self
+            },
+        }
     }
 
     /// Checks the timings make sense for a cut of `cut_len` seconds.
@@ -116,6 +154,17 @@ mod tests {
             ..Default::default()
         };
         assert!(t.validate(100.0).is_err());
+    }
+
+    #[test]
+    fn a_preview_leaves_the_other_end_off() {
+        let t = Timings::default().only(End::Opening);
+        assert!(t.has_opening() && !t.has_closing());
+        assert_eq!(t.fade_out, 0.0);
+        // 8.5 s of opening fits a 10 s preview once the closing is off.
+        t.validate(10.0).unwrap();
+        let c = Timings::default().only(End::Closing);
+        assert!(!c.has_opening() && c.has_closing() && c.fade_in == 0.0);
     }
 
     #[test]

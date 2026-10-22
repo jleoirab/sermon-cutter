@@ -38,6 +38,12 @@ final class SundayModel: ObservableObject {
     @Published var exportProgress: Double?
     @Published var exportError: String?
     @Published var problem: String?
+    /// "opening" or "closing" while a preview renders.
+    @Published var previewing: String?
+    @Published var previewProgress: Double?
+    /// The preview being shown.
+    @Published var previewEnd: String?
+    let previewPlayer = AVPlayer()
 
     let engine: Engine
     let folders: Folders
@@ -90,6 +96,9 @@ final class SundayModel: ObservableObject {
         guard let q = sunday.quality, let a = sunday.cutIn, let b = sunday.cutOut else { return false }
         return abs(q.cutIn - a) > 0.5 || abs(q.cutOut - b) > 0.5
     }
+
+    var allDone: Bool { steps.allSatisfy { $0.state == .done } }
+    var anyFailed: Bool { steps.contains { if case .failed = $0.state { return true } else { return false } } }
 
     var canExport: Bool {
         hasVideo && sunday.bannerPath != nil && sunday.cutIn != nil && sunday.cutOut != nil && !exporting
@@ -184,7 +193,12 @@ final class SundayModel: ObservableObject {
 
     private func fetchVideoQuietly(_ id: String) async -> URL? {
         do {
-            return try await fetch(id, part: "video")
+            let v = try await fetch(id, part: "video")
+            // Show the picture as soon as it's here, even mid-analysis.
+            sunday.videoFile = v.path
+            save()
+            loadMedia()
+            return v
         } catch {
             set("video", .failed(error.localizedDescription))
             return nil
@@ -365,6 +379,45 @@ final class SundayModel: ObservableObject {
             }
         }
         tasks.append(t)
+    }
+
+    // MARK: - Previewing the ends
+
+    /// Renders the first or last 20 seconds with the banner and fade, then
+    /// plays it.
+    func preview(_ end: String) {
+        guard let id = sunday.id, hasVideo, let video = sunday.videoFile, let banner = sunday.bannerPath,
+              let a = sunday.cutIn, let b = sunday.cutOut, previewing == nil
+        else { return }
+        previewing = end
+        previewProgress = 0
+        let out = folders.file(id, "preview-\(end).mp4")
+        let t = Task {
+            defer { previewing = nil }
+            do {
+                let args = [
+                    "render", "--source", video, "--banner", banner,
+                    "--in", Engine.number(a), "--out", Engine.number(b),
+                    "-o", out.path, "--overwrite", "--preview", end,
+                ] + sunday.timings.arguments
+                _ = try await engine.run(args) { [weak self] event in
+                    guard event.event == "progress", event.step == "render", let f = event.fraction, let model = self else { return }
+                    Task { @MainActor in model.previewProgress = f }
+                }
+                previewPlayer.replaceCurrentItem(with: AVPlayerItem(url: out))
+                previewEnd = end
+                previewPlayer.play()
+            } catch is CancellationError {
+            } catch {
+                problem = error.localizedDescription
+            }
+        }
+        tasks.append(t)
+    }
+
+    func closePreview() {
+        previewPlayer.pause()
+        previewEnd = nil
     }
 
     func showExportInFinder() {

@@ -12,7 +12,7 @@ use sermoncut::events::{Event, Sink, StdoutSink};
 use sermoncut::fetch::{self, Part};
 use sermoncut::quality::{self, VideoSource};
 use sermoncut::render::{self, RenderRequest};
-use sermoncut::timings::Timings;
+use sermoncut::timings::{End, Timings};
 use sermoncut::tools::Tools;
 use sermoncut::transcribe::{Transcriber, Transcript};
 use sermoncut::verify::{self, Expect};
@@ -32,6 +32,12 @@ struct Cli {
 
     #[command(subcommand)]
     command: Command,
+}
+
+#[derive(Clone, Copy, ValueEnum)]
+enum PreviewEnd {
+    Opening,
+    Closing,
 }
 
 #[derive(Clone, Copy, ValueEnum)]
@@ -188,6 +194,13 @@ enum Command {
         /// Replace the output file if it already exists.
         #[arg(long)]
         overwrite: bool,
+        /// Render only the first or last seconds of the cut with that end's
+        /// banner and fade, to preview it (implies --no-verify).
+        #[arg(long, value_enum)]
+        preview: Option<PreviewEnd>,
+        /// Seconds of a preview.
+        #[arg(long, default_value_t = 20.0)]
+        preview_len: f64,
     },
 
     /// Check an exported file: format, length, banner at both ends, quiet first and last moments.
@@ -464,14 +477,31 @@ fn run(cli: Cli, sink: &dyn Sink) -> Result<()> {
             size,
             no_verify,
             overwrite,
+            preview,
+            preview_len,
         } => {
-            let timings = Timings {
+            let mut timings = Timings {
                 open_hold,
                 dissolve,
                 close_hold,
                 fade_in,
                 fade_out,
+                ..Timings::default()
             };
+            let (mut cut_in, mut cut_out, mut no_verify) = (cut_in, cut_out, no_verify);
+            match preview {
+                Some(PreviewEnd::Opening) => {
+                    timings = timings.only(End::Opening);
+                    cut_out = cut_out.min(cut_in + preview_len);
+                    no_verify = true;
+                }
+                Some(PreviewEnd::Closing) => {
+                    timings = timings.only(End::Closing);
+                    cut_in = cut_in.max(cut_out - preview_len);
+                    no_verify = true;
+                }
+                None => {}
+            }
             let req = RenderRequest {
                 source,
                 banner: banner.clone(),
@@ -493,8 +523,8 @@ fn run(cli: Cli, sink: &dyn Sink) -> Result<()> {
                     duration: Some(outcome.cut_len),
                     width: size.0,
                     height: size.1,
-                    banner_at_start: timings.open_hold > 0.0,
-                    banner_at_end: timings.close_hold > 0.0,
+                    banner_at_start: timings.has_opening() && timings.open_hold > 0.0,
+                    banner_at_end: timings.has_closing() && timings.close_hold > 0.0,
                     quiet_start: timings.fade_in > 0.0,
                     quiet_end: timings.fade_out > 0.0,
                 };

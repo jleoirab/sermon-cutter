@@ -25,6 +25,25 @@ struct SundayView: View {
                     .frame(minWidth: 340, idealWidth: 380, maxWidth: 460)
             }
         }
+        .sheet(isPresented: Binding(
+            get: { model.previewEnd != nil },
+            set: { if !$0 { model.closePreview() } }
+        )) {
+            VStack(alignment: .leading, spacing: 10) {
+                Text(model.previewEnd == "opening" ? "The opening, as it will export" : "The closing, as it will export")
+                    .font(.headline)
+                PlayerView(player: model.previewPlayer)
+                    .frame(width: 800, height: 450)
+                HStack {
+                    Text("Change the holds and fades on the right, then preview again.")
+                        .font(.caption).foregroundStyle(.secondary)
+                    Spacer()
+                    Button("Done") { model.closePreview() }
+                        .keyboardShortcut(.defaultAction)
+                }
+            }
+            .padding(16)
+        }
         .alert("Something went wrong", isPresented: Binding(
             get: { model.problem != nil },
             set: { if !$0 { model.problem = nil } }
@@ -49,7 +68,9 @@ struct SundayView: View {
                 }
             }
             Spacer()
-            StepsBar(steps: model.steps)
+            if !model.allDone || model.anyFailed {
+                StepsBar(steps: model.steps)
+            }
             if let q = model.sunday.quality {
                 VerdictBadge(report: q, stale: model.qualityIsStale)
             }
@@ -107,12 +128,13 @@ struct VerdictBadge: View {
     let stale: Bool
 
     var body: some View {
-        Text(stale ? "\(report.headline) (before the last change)" : report.headline)
+        Text(report.headline)
             .font(.callout.weight(.semibold))
             .padding(.horizontal, 10)
             .padding(.vertical, 4)
-            .background(color.opacity(stale ? 0.08 : 0.18), in: Capsule())
-            .overlay(Capsule().stroke(color.opacity(0.7), lineWidth: 1))
+            .background(color.opacity(stale ? 0.06 : 0.18), in: Capsule())
+            .overlay(Capsule().stroke(color.opacity(stale ? 0.35 : 0.7), style: StrokeStyle(lineWidth: 1, dash: stale ? [3, 2] : [])))
+            .help(stale ? "Checked before In or Out last moved; check again to update." : report.reasons.joined(separator: " "))
     }
 
     var color: Color { VerdictBadge.color(report.verdict) }

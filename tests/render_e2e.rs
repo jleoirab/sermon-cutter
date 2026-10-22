@@ -63,6 +63,7 @@ fn request(source: PathBuf, banner: PathBuf, output: PathBuf) -> RenderRequest {
             close_hold: 3.0,
             fade_in: 2.0,
             fade_out: 1.5,
+            ..Timings::default()
         },
         output,
         encoder: "auto".into(),

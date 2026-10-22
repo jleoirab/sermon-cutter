@@ -199,9 +199,11 @@ struct TimelineView: View {
         var t = (r.lowerBound / tick).rounded(.up) * tick
         while t <= r.upperBound {
             let tx = x(t, w, r)
-            ctx.fill(Path(CGRect(x: tx, y: tickTop, width: 1, height: 4)), with: .color(.secondary))
-            ctx.draw(Text(Timecode.format(t)).font(.system(size: 9).monospacedDigit()).foregroundColor(.secondary),
-                     at: CGPoint(x: tx, y: tickTop + 12), anchor: .center)
+            if tx > 18 && tx < w - 18 {
+                ctx.fill(Path(CGRect(x: tx, y: tickTop, width: 1, height: 4)), with: .color(.secondary))
+                ctx.draw(Text(Timecode.format(t)).font(.system(size: 9).monospacedDigit()).foregroundColor(.secondary),
+                         at: CGPoint(x: tx, y: tickTop + 12), anchor: .center)
+            }
             t += tick
         }
 
@@ -235,8 +237,9 @@ struct TimelineView: View {
         ctx.fill(Path(CGRect(x: x - 1, y: bandTop - 2, width: 2, height: stripTop + stripHeight + 2)), with: .color(.accentColor))
         let knob = CGRect(x: x - 5, y: bandTop + bandHeight / 2 - 11, width: 10, height: 22)
         ctx.fill(Path(roundedRect: knob, cornerRadius: 3), with: .color(.accentColor))
-        ctx.draw(Text(label).font(.caption2.bold()).foregroundColor(.accentColor),
-                 at: CGPoint(x: min(max(x, 12), w - 12), y: tickTop + 12), anchor: .center)
+        let right = label == "In"
+        ctx.draw(Text(label).font(.caption2.bold()).foregroundColor(.white),
+                 at: CGPoint(x: x + (right ? 8 : -8), y: bandTop + 8), anchor: right ? .leading : .trailing)
     }
 
     private var legend: some View {

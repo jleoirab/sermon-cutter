@@ -108,8 +108,8 @@ struct PointRow: View {
     let confidence: String
     let evidence: String
     let playhead: Double
-    let set: (Double) -> Void
-    let seek: (Double) -> Void
+    let set: @MainActor (Double) -> Void
+    let seek: @MainActor (Double) -> Void
     @State private var text = ""
 
     var body: some View {
@@ -334,9 +334,33 @@ struct EndsSection: View {
                 }
             }
             .font(.callout)
-            Button("Reset to the usual") { model.setTimings(Timings()) }
-                .controlSize(.small)
-                .disabled(model.sunday.timings == Timings())
+            HStack {
+                Button("Reset to the usual") { model.setTimings(Timings()) }
+                    .controlSize(.small)
+                    .disabled(model.sunday.timings == Timings())
+                Spacer()
+            }
+            HStack(spacing: 8) {
+                Text("Preview").font(.callout)
+                ForEach(["opening", "closing"], id: \.self) { end in
+                    Button {
+                        model.preview(end)
+                    } label: {
+                        if model.previewing == end {
+                            HStack(spacing: 4) {
+                                ProgressView().controlSize(.mini)
+                                Text("\(Int((model.previewProgress ?? 0) * 100))%")
+                            }
+                        } else {
+                            Text(end.capitalized)
+                        }
+                    }
+                    .disabled(model.previewing != nil || !model.hasVideo || model.sunday.bannerPath == nil)
+                }
+            }
+            Text("Plays 20 seconds with the banner and fade, as they will export.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
         }
     }
 
