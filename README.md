@@ -167,4 +167,4 @@ On Oct 4 the preacher never said to sit. Someone else thanked him and started th
 
 Your lead-ins ranged from 1.4 to 7.2 minutes, so the lead-in stays your call each week. A transcript of the minute around each found start confirms the speaker taking over from the worship team there.
 
-The listening covered 50 to 80 minutes of each stream, at about 5× real time on 2 cloud CPU cores. The Mac's GPU should be much faster; that's the next thing to measure.
+The listening covered 50 to 80 minutes of each stream. On the 2022 MacBook Pro, `find` on Oct 11 took 1 min 40 s in all, including measuring the sound and transcribing 50 minutes on the GPU. It put Out at 2:29:19.2, 1.3 s before the real cut; whisper's word times differ by a second or so between computers.
