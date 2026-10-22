@@ -111,9 +111,9 @@ final class SundayModel: ObservableObject {
     /// Passes the engine's progress on to the step it belongs to.
     private func progress(_ map: [String: (String, String)]) -> @Sendable (EngineEvent) -> Void {
         { [weak self] event in
-            guard event.event == "progress", let s = event.step, let target = map[s] else { return }
+            guard event.event == "progress", let s = event.step, let target = map[s], let model = self else { return }
             let f = event.fraction
-            Task { @MainActor in self?.set(target.0, .running(f), detail: target.1) }
+            Task { @MainActor in model.set(target.0, .running(f), detail: target.1) }
         }
     }
 
@@ -349,8 +349,8 @@ final class SundayModel: ObservableObject {
                 ] + sunday.timings.arguments
                 if overwrite { args.append("--overwrite") }
                 let run = try await engine.run(args, keepResults: true) { [weak self] event in
-                    guard event.event == "progress", event.step == "render", let f = event.fraction else { return }
-                    Task { @MainActor in self?.exportProgress = f }
+                    guard event.event == "progress", event.step == "render", let f = event.fraction, let model = self else { return }
+                    Task { @MainActor in model.exportProgress = f }
                 }
                 if let outcome = try? run.result("render", as: RenderOutcome.self) {
                     sunday.exported = outcome
