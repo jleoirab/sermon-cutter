@@ -20,10 +20,10 @@ echo "ok"
 echo "== app"
 if ! (cd "$ROOT/app" && swift build -c release >> "$FULL" 2>&1); then
   echo "app build failed:"
-  grep -E "error:" -A3 "$FULL" | head -150
+  grep -E "error:" -A3 "$FULL" | grep -v "xcrun: error: unable to lookup item" | head -150
   exit 1
 fi
-grep -E "warning:" "$FULL" | grep -v "^ld: warning" | sort -u | head -30
+grep -E "warning:" "$FULL" | grep -v "^ld: warning" | sort -u | head -40
 echo "ok"
 
 echo "== bundle"
@@ -45,7 +45,7 @@ cat > "$OUT/Contents/Info.plist" <<PLIST
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>0.4</string>
   <key>CFBundleVersion</key><string>$VERSION</string>
-  <key>LSMinimumSystemVersion</key><string>15.0</string>
+  <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.video</string>
   <key>NSHighResolutionCapable</key><true/>
   <key>NSDocumentsFolderUsageDescription</key><string>Sermon Cutter saves each sermon in your Service folder and reads banners from it.</string>
