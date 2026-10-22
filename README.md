@@ -14,25 +14,38 @@ This is milestones 1 and 2 of the [Sermon Cutter PRD & Design Plan](https://clau
 ## Try it on a Mac
 
 ```bash
-brew install rust ffmpeg yt-dlp deno
+brew install rust ffmpeg yt-dlp deno whisper-cpp
 cargo build --release
 B=./target/release/sermoncut
 
-$B tools                       # which ffmpeg, ffprobe, yt-dlp and Deno it found
+# The speech model for hearing "please be seated" (264 MB, once).
+mkdir -p ~/Movies/SermonCutter/models
+curl -L -o ~/Movies/SermonCutter/models/ggml-small.en-q8_0.bin \
+  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en-q8_0.bin
+export SERMONCUT_WHISPER_MODEL=~/Movies/SermonCutter/models/ggml-small.en-q8_0.bin
+
+$B tools                       # which ffmpeg, ffprobe, yt-dlp, Deno and whisper.cpp it found
 $B encoders                    # expect h264_videotoolbox first
 
 $B info  https://www.youtube.com/watch?v=iz0PPVUleUw
 $B fetch https://www.youtube.com/watch?v=iz0PPVUleUw --dir ~/Movies/SermonCutter
 
-# In and Out are wherever you'd cut today (these are only examples).
+# Find the sermon: prints "in_tc" and "out_tc" with their confidence.
+$B find ~/Movies/SermonCutter/iz0PPVUleUw.audio.m4a --lead-in 6:00 \
+  --cache ~/Movies/SermonCutter/iz0PPVUleUw.sound.json \
+  --transcript-cache ~/Movies/SermonCutter/iz0PPVUleUw.words.json
+
+# Render with the In and Out that find printed.
 $B render \
   --source ~/Movies/SermonCutter/iz0PPVUleUw.video.mp4 \
   --banner "$HOME/Documents/CCIKW/Service/Oct 11th 2026/YOUR-MOUNTAIN-16BY9.webp" \
-  --in 1:21:05 --out 2:35:00 \
+  --in 1:11:38 --out 2:29:21.5 \
   -o "$HOME/Movies/SermonCutter/Oct 11 test.mp4"
 ```
 
 `render` checks its own output and fails if the check fails; pass `--no-verify` to skip the check. It never replaces an existing file unless you pass `--overwrite`, so a test run can't write over a finished sermon.
+
+`find` only needs the audio file, so it can run while the video is still downloading. The caches make a second run instant.
 
 ## Commands
 
@@ -77,11 +90,13 @@ The exit status is 0 on success and 1 on failure.
 
 For each tool it checks, in order:
 
-1. An environment variable: `SERMONCUT_FFMPEG`, `SERMONCUT_FFPROBE`, `SERMONCUT_YTDLP` or `SERMONCUT_DENO`.
+1. An environment variable: `SERMONCUT_FFMPEG`, `SERMONCUT_FFPROBE`, `SERMONCUT_YTDLP`, `SERMONCUT_DENO` or `SERMONCUT_WHISPER` (whisper.cpp's `whisper-cli`).
 2. The app's tools folder, or `--tools-dir`:
     - macOS: `~/Library/Application Support/Sermon Cutter/bin`
     - Windows: `%LOCALAPPDATA%\Sermon Cutter\bin`
 3. The `PATH`.
+
+The speech model comes from `SERMONCUT_WHISPER_MODEL`, `--model`, or the tools folder's `models` folder (`ggml-small.en-q8_0.bin` first).
 
 The tools folder sits outside the signed app so yt-dlp can keep itself up to date. YouTube downloads need a JavaScript runtime, and Deno is yt-dlp's recommended one.
 
