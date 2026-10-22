@@ -1,2 +1,8 @@
 target/
 *.partial
+/build/
+/app/.build/
+/.build-request
+/.build-log.txt
+/.build-full.txt
+.DS_Store
