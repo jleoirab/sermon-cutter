@@ -22,6 +22,15 @@ public struct StreamEntry: Codable, Equatable, Identifiable, Sendable {
     public var duration: Double?
     public var liveStatus: String?
     public var uploadDate: String?
+
+    public init(id: String, title: String, url: String, duration: Double? = nil, liveStatus: String? = nil, uploadDate: String? = nil) {
+        self.id = id
+        self.title = title
+        self.url = url
+        self.duration = duration
+        self.liveStatus = liveStatus
+        self.uploadDate = uploadDate
+    }
 }
 
 public struct StreamList: Codable, Sendable {

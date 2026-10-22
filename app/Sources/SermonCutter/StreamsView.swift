@@ -15,7 +15,22 @@ struct StreamsView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("Streams").font(.largeTitle.bold())
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Streams").font(.largeTitle.bold())
+                        Spacer()
+                        if app.loadingStreams {
+                            HStack(spacing: 6) {
+                                ProgressView().controlSize(.small)
+                                Text("Looking for the newest streams…").font(.callout).foregroundStyle(.secondary)
+                            }
+                        } else {
+                            Button {
+                                Task { await app.loadStreams() }
+                            } label: {
+                                Label("Refresh", systemImage: "arrow.clockwise")
+                            }
+                        }
+                    }
                     Text("Pick the stream to cut. Preparing downloads the audio first, finds the sermon and checks the stream while the video downloads.")
                         .foregroundStyle(.secondary)
                 }
@@ -51,35 +66,40 @@ struct StreamsView: View {
     }
 
     @ViewBuilder private var streamList: some View {
-        if app.loadingStreams && app.streams.isEmpty {
-            HStack(spacing: 8) {
-                ProgressView().controlSize(.small)
-                Text("Looking for the newest streams on CelebrationGlobalTV…").foregroundStyle(.secondary)
-            }
-        } else if let e = app.streamsError, app.streams.isEmpty {
+        if let e = app.streamsError, app.streams.isEmpty {
             VStack(alignment: .leading, spacing: 6) {
                 Label("Couldn't list the channel's streams", systemImage: "wifi.exclamationmark")
                 Text(e).font(.caption).foregroundStyle(.secondary).lineLimit(3)
                 Button("Try again") { Task { await app.loadStreams() } }
             }
+        } else if app.streamsLoaded && app.streams.isEmpty {
+            Text("No streams on CelebrationGlobalTV right now. Paste a link below instead.")
+                .foregroundStyle(.secondary)
         } else {
+            // Until the channel answers, grey rows hold the list's place so
+            // nothing below it moves when it arrives.
+            let waiting = app.streams.isEmpty
+            let rows = waiting ? StreamsView.placeholders : app.streams
             VStack(spacing: 0) {
-                ForEach(Array(app.streams.enumerated()), id: \.element.id) { i, s in
-                    StreamRow(entry: s, newest: i == 0) { app.open(link: s.url) }
-                    if i < app.streams.count - 1 { Divider() }
+                ForEach(Array(rows.enumerated()), id: \.element.id) { i, s in
+                    StreamRow(entry: s, newest: !waiting && i == 0) { app.open(link: s.url) }
+                    if i < rows.count - 1 { Divider() }
                 }
             }
             .background(.background.secondary, in: RoundedRectangle(cornerRadius: 10))
-            HStack {
-                Spacer()
-                Button {
-                    Task { await app.loadStreams() }
-                } label: {
-                    Label("Refresh", systemImage: "arrow.clockwise")
-                }
-                .disabled(app.loadingStreams)
-            }
+            .redacted(reason: waiting ? .placeholder : [])
+            .disabled(waiting)
         }
+    }
+
+    static let placeholders = (0..<8).map {
+        StreamEntry(
+            id: "placeholder-\($0)",
+            title: "SUNDAY SERVICE | 1ST SERVICE | 11TH OCTOBER 2026 | CELEBRATION CHURCH INT'L",
+            url: "",
+            duration: 9000,
+            uploadDate: "20261011"
+        )
     }
 }
 

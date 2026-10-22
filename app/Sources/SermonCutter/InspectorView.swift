@@ -262,6 +262,7 @@ struct BannerSection: View {
     @State private var fetching = false
     @State private var linkError: String?
     @State private var thumbnail: NSImage?
+    @State private var unreadable = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -276,7 +277,19 @@ struct BannerSection: View {
                         .aspectRatio(16 / 9, contentMode: .fit)
                         .padding(6)
                 } else if model.sunday.bannerPath != nil {
-                    ProgressView().controlSize(.small)
+                    if unreadable {
+                        VStack(spacing: 4) {
+                            Image(systemName: "exclamationmark.triangle").font(.title2)
+                            Text("Couldn't open the banner. Choose it again or drop another.").font(.callout)
+                            Text("If you said no when macOS asked about Documents, turn it on in System Settings → Privacy & Security → Files and Folders.")
+                                .font(.caption)
+                        }
+                        .multilineTextAlignment(.center)
+                        .foregroundStyle(.secondary)
+                        .padding(10)
+                    } else {
+                        BannerWaiting()
+                    }
                 } else {
                     VStack(spacing: 4) {
                         Image(systemName: "photo").font(.title2)
@@ -317,9 +330,15 @@ struct BannerSection: View {
             // Read the image off the main thread: the first read of a file in
             // Documents waits for macOS to ask for permission.
             thumbnail = nil
+            unreadable = false
             guard let path = model.sunday.bannerPath else { return }
             let data = await Task.detached(priority: .userInitiated) { FileManager.default.contents(atPath: path) }.value
-            if !Task.isCancelled, let data { thumbnail = NSImage(data: data) }
+            guard !Task.isCancelled else { return }
+            if let data, let image = NSImage(data: data) {
+                thumbnail = image
+            } else {
+                unreadable = true
+            }
         }
         .fileImporter(isPresented: $choosing, allowedContentTypes: [.png, .jpeg, .webP, .image]) { result in
             if case .success(let url) = result { model.setBanner(url) }
@@ -343,6 +362,29 @@ struct BannerSection: View {
 
     static func isImage(_ url: URL) -> Bool {
         ["png", "jpg", "jpeg", "webp"].contains(url.pathExtension.lowercased())
+    }
+}
+
+/// A spinner for the banner. If it takes more than a moment, macOS is most
+/// likely waiting for an answer about Documents, so say so.
+struct BannerWaiting: View {
+    @State private var slow = false
+
+    var body: some View {
+        VStack(spacing: 6) {
+            ProgressView().controlSize(.small)
+            if slow {
+                Text("Waiting for macOS. If it asks to let Sermon Cutter open Documents, choose Allow.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal, 12)
+            }
+        }
+        .task {
+            try? await Task.sleep(for: .seconds(3))
+            if !Task.isCancelled { slow = true }
+        }
     }
 }
 

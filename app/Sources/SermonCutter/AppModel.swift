@@ -12,6 +12,8 @@ final class AppModel: ObservableObject {
     @Published var streams: [StreamEntry] = []
     @Published var streamsError: String?
     @Published var loadingStreams = false
+    /// The channel has been listed at least once this run.
+    @Published var streamsLoaded = false
     @Published var current: SundayModel?
     @Published var engineMissing = false
 
@@ -67,6 +69,7 @@ final class AppModel: ObservableObject {
         defer { loadingStreams = false }
         do {
             streams = try await engine.run(["streams", "--count", "8"]).result("streams", as: StreamList.self).streams
+            streamsLoaded = true
         } catch {
             streamsError = error.localizedDescription
         }
