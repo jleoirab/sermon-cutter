@@ -10,7 +10,22 @@
 
 It runs the same on macOS and Windows. The Mac app, and a Windows app later, drive it as a command-line tool and read its progress as JSON.
 
-This is milestones 1 to 3 of the [Sermon Cutter PRD & Design Plan](https://claude.ai/code/artifact/159c19aa-033f-42a7-ac98-4f42af1fc993). The Mac app comes next.
+This is milestones 1 to 3 of the [Sermon Cutter PRD & Design Plan](https://claude.ai/code/artifact/159c19aa-033f-42a7-ac98-4f42af1fc993), plus the first version of the Mac app (milestone 4) in `app/`.
+
+## The Mac app
+
+```bash
+app/build.sh        # builds the engine and the app, installs ~/Applications/Sermon Cutter.app
+```
+
+It needs the Xcode Command Line Tools (Swift 5.9 or later), Rust, and for now the tools from Homebrew (`brew install ffmpeg yt-dlp deno whisper-cpp`) plus the speech model (see Settings).
+
+- **Streams** lists the channel's newest streams; pick one or paste a link. Sundays already started are listed below to pick up where they left off.
+- **Preparing** downloads the audio, finds the sermon and checks the sound while the video downloads, then checks the picture. Everything is cached next to the downloads, so reopening a Sunday is instant.
+- **Review** has the player and the timeline on the left: music and speech bands, the cut, the quality strip, and loudness when zoomed to 10 minutes or 1 minute. Drag In or Out (the player follows), or click to play from anywhere. On the right are In and Out with their confidence and evidence, nudges, Set to playhead and typed times; the lead-in; the verdict, each problem (click to listen) and Copy the note for the leads; the banner (dropped, chosen, from a Drive link shared with anyone, or found already in the Sunday's Service folder); the holds and fades with 20-second previews of each end.
+- **Export** writes Service/<date>/<date> Sermon.mp4 (for example "Oct 11th 2026/Oct 11th Sermon.mp4"), self-checks it, and offers Show in Finder.
+
+Still to come before the pilot: tools bundled with the app (no Homebrew), dragging the banner and fade edges on the timeline, Drive upload, and signing.
 
 ## Try it on a Mac
 

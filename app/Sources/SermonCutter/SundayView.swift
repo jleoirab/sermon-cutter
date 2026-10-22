@@ -18,7 +18,10 @@ struct SundayView: View {
                     Divider()
                     TimelineView(model: model)
                         .padding(.horizontal, 12)
-                        .padding(.vertical, 10)
+                        .padding(.top, 10)
+                    EndsTrack(model: model)
+                        .padding(.horizontal, 12)
+                        .padding(.vertical, 8)
                 }
                 .frame(minWidth: 620)
                 InspectorView(model: model)
