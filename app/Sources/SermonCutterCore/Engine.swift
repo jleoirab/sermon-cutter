@@ -29,6 +29,11 @@ public enum EngineError: LocalizedError, Equatable {
     }
 }
 
+/// A `{"event":"result","data":...}` line.
+private struct ResultLine<T: Decodable>: Decodable {
+    var data: T
+}
+
 /// The results of one engine run, by step.
 public struct EngineRun: Sendable {
     public var results: [String: Data]
@@ -43,8 +48,7 @@ public struct EngineRun: Sendable {
 
     public func result<T: Decodable>(_ step: String, as type: T.Type = T.self) throws -> T {
         guard let line = results[step] else { throw EngineError.noResult(step) }
-        struct Line<U: Decodable>: Decodable { var data: U }
-        return try Engine.decoder.decode(Line<T>.self, from: line).data
+        return try Engine.decoder.decode(ResultLine<T>.self, from: line).data
     }
 }
 
