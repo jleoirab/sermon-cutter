@@ -8,6 +8,19 @@ OUT="$ROOT/build/$APP_NAME.app"
 FULL="$ROOT/.build-full.txt"
 : > "$FULL"
 
+# A diagnostic request: sample the running app instead of building.
+if [ -e "$ROOT/.build-diagnose" ]; then
+  rm -f "$ROOT/.build-diagnose"
+  PID="$(pgrep -x "$APP_NAME" | head -1)"
+  echo "== sampling $APP_NAME (pid ${PID:-none})"
+  if [ -n "$PID" ]; then
+    sample "$PID" 3 -file "$ROOT/.sample.txt" >/dev/null 2>&1
+    ps -o pid,pcpu,rss,etime,stat -p "$PID"
+    grep -A60 "Call graph" "$ROOT/.sample.txt" | head -80
+  fi
+  exit 0
+fi
+
 echo "== toolchain"
 sw_vers -productVersion
 swift --version 2>&1 | head -1

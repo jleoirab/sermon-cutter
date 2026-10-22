@@ -6,3 +6,5 @@ target/
 /.build-log.txt
 /.build-full.txt
 .DS_Store
+/.build-diagnose
+/.sample.txt
