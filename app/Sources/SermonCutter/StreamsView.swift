@@ -15,7 +15,7 @@ struct StreamsView: View {
                 }
 
                 VStack(alignment: .leading, spacing: 8) {
-                    Text("This Sunday").font(.largeTitle.bold())
+                    Text("Streams").font(.largeTitle.bold())
                     Text("Pick the stream to cut. Preparing downloads the audio first, finds the sermon and checks the stream while the video downloads.")
                         .foregroundStyle(.secondary)
                 }
@@ -38,7 +38,7 @@ struct StreamsView: View {
                     VStack(alignment: .leading, spacing: 8) {
                         Text("Started before").font(.headline)
                         ForEach(saved, id: \.url) { s in
-                            SavedRow(sunday: s) { app.open(saved: s) }
+                            SavedRow(sunday: s, open: { app.open(saved: s) }, trash: { app.trash(s) })
                         }
                     }
                 }
@@ -125,6 +125,8 @@ struct StreamRow: View {
 struct SavedRow: View {
     let sunday: Sunday
     let open: () -> Void
+    let trash: () -> Void
+    @State private var confirming = false
 
     var body: some View {
         HStack {
@@ -134,8 +136,21 @@ struct SavedRow: View {
             }
             Spacer()
             Button("Open", action: open)
+            Menu {
+                Button("Move its downloads to the Trash…") { confirming = true }
+            } label: {
+                Image(systemName: "ellipsis.circle")
+            }
+            .menuStyle(.borderlessButton)
+            .fixedSize()
         }
         .padding(.vertical, 4)
+        .confirmationDialog("Move this Sunday's downloads and work files to the Trash?", isPresented: $confirming) {
+            Button("Move to Trash", role: .destructive, action: trash)
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The finished sermon in the Service folder stays where it is.")
+        }
     }
 
     private var status: String {

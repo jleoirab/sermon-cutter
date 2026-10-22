@@ -76,7 +76,20 @@ struct FolderRow: View {
             }
         }
         .onAppear { text = FolderRow.tilde(url.path) }
-        .onChange(of: url) { _, u in text = FolderRow.tilde(u.path) }
+        .onChange(of: url) { _, u in
+            let t = FolderRow.tilde(u.path)
+            if t != text { text = t }
+        }
+        .onChange(of: text) { _, t in
+            // Take a pasted or typed path as soon as its parent folder exists.
+            let path = (t as NSString).expandingTildeInPath
+            let parent = (path as NSString).deletingLastPathComponent
+            var isDir: ObjCBool = false
+            if path != url.path, path.hasPrefix("/"),
+               FileManager.default.fileExists(atPath: parent, isDirectory: &isDir), isDir.boolValue {
+                set(URL(fileURLWithPath: path, isDirectory: true))
+            }
+        }
     }
 
     private func commit() {

@@ -94,6 +94,17 @@ final class AppModel: ObservableObject {
         model.prepare()
     }
 
+    /// Moves a saved Sunday's downloads and work files to the Trash.
+    func trash(_ sunday: Sunday) {
+        guard let id = sunday.id else { return }
+        let fm = FileManager.default
+        let names = (try? fm.contentsOfDirectory(atPath: folders.work.path)) ?? []
+        for name in names where name.hasPrefix("\(id).") {
+            try? fm.trashItem(at: folders.work.appendingPathComponent(name), resultingItemURL: nil)
+        }
+        objectWillChange.send()
+    }
+
     func closeSunday() {
         current?.stop()
         current = nil
