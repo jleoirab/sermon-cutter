@@ -65,7 +65,18 @@ cat > "$OUT/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
-codesign --force --deep --sign - "$OUT" >> "$FULL" 2>&1 || echo "(ad-hoc signing failed; the app still runs from this Mac)"
+# Sign with a stable identity when there is one, so macOS remembers the
+# app's permissions (Documents folder) from one build to the next.
+IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | grep -o '"Sermon Cutter Dev"' | head -1 | tr -d '"')"
+codesign --force --deep --sign "${IDENTITY:--}" "$OUT" >> "$FULL" 2>&1 || echo "(signing failed; the app still runs from this Mac)"
+echo "signed: ${IDENTITY:-ad hoc}"
+
+# Quit the running copy so the new one opens next.
+if pgrep -x "$APP_NAME" >/dev/null; then
+  osascript -e "quit app \"$APP_NAME\"" >/dev/null 2>&1
+  sleep 2
+  pkill -x "$APP_NAME" 2>/dev/null
+fi
 mkdir -p "$HOME/Applications"
 rm -rf "$HOME/Applications/$APP_NAME.app"
 cp -R "$OUT" "$HOME/Applications/"

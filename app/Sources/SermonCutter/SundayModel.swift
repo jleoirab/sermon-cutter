@@ -141,9 +141,12 @@ final class SundayModel: ObservableObject {
             set("info", .done, detail: dateText ?? sunday.info?.title)
             guard let id = sunday.id else { throw EngineError.failed(step: "info", message: "That doesn't look like a YouTube link.") }
             try FileManager.default.createDirectory(at: folders.work, withIntermediateDirectories: true)
-            if sunday.bannerPath == nil, let d = sunday.date, let b = folders.suggestedBanner(d) {
-                sunday.bannerPath = b.path
-                save()
+            if sunday.bannerPath == nil, let d = sunday.date {
+                let folders = self.folders
+                if let b = await Task.detached(operation: { folders.suggestedBanner(d) }).value {
+                    sunday.bannerPath = b.path
+                    save()
+                }
             }
 
             current = "audio"

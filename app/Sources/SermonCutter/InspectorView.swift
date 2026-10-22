@@ -261,6 +261,7 @@ struct BannerSection: View {
     @State private var link = ""
     @State private var fetching = false
     @State private var linkError: String?
+    @State private var thumbnail: NSImage?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -269,11 +270,13 @@ struct BannerSection: View {
                 RoundedRectangle(cornerRadius: 8)
                     .strokeBorder(style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
                     .foregroundStyle(targeted ? Color.accentColor : .secondary)
-                if let path = model.sunday.bannerPath, let image = NSImage(contentsOfFile: path) {
+                if let image = thumbnail {
                     Image(nsImage: image)
                         .resizable()
                         .aspectRatio(16 / 9, contentMode: .fit)
                         .padding(6)
+                } else if model.sunday.bannerPath != nil {
+                    ProgressView().controlSize(.small)
                 } else {
                     VStack(spacing: 4) {
                         Image(systemName: "photo").font(.title2)
@@ -308,6 +311,14 @@ struct BannerSection: View {
             if let linkError {
                 Text(linkError).font(.caption).foregroundStyle(.red).fixedSize(horizontal: false, vertical: true)
             }
+        }
+        .task(id: model.sunday.bannerPath) {
+            // Read the image off the main thread: the first read of a file in
+            // Documents waits for macOS to ask for permission.
+            thumbnail = nil
+            guard let path = model.sunday.bannerPath else { return }
+            let image = await Task.detached(priority: .userInitiated) { NSImage(contentsOfFile: path) }.value
+            if !Task.isCancelled { thumbnail = image }
         }
         .fileImporter(isPresented: $choosing, allowedContentTypes: [.png, .jpeg, .webP, .image]) { result in
             if case .success(let url) = result { model.setBanner(url) }
