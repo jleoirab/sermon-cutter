@@ -90,7 +90,12 @@ where
 /// exactly `chunk` bytes (the last piece may be shorter). Used to read raw
 /// audio from ffmpeg without holding hours of it in memory. Returns whether
 /// the program succeeded and what it printed on standard error.
-pub fn stream_bytes<I, S, F>(program: &Path, args: I, chunk: usize, mut on_chunk: F) -> Result<(bool, String)>
+pub fn stream_bytes<I, S, F>(
+    program: &Path,
+    args: I,
+    chunk: usize,
+    mut on_chunk: F,
+) -> Result<(bool, String)>
 where
     I: IntoIterator<Item = S>,
     S: AsRef<OsStr>,

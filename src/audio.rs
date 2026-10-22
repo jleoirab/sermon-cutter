@@ -62,7 +62,11 @@ impl Default for SecondMeter {
         let window = (0..SR)
             .map(|n| 0.5 - 0.5 * (2.0 * std::f32::consts::PI * n as f32 / (SR as f32 - 1.0)).cos())
             .collect();
-        SecondMeter { fft, window, scratch: vec![Complex::new(0.0, 0.0); SR] }
+        SecondMeter {
+            fft,
+            window,
+            scratch: vec![Complex::new(0.0, 0.0); SR],
+        }
     }
 }
 
@@ -78,12 +82,17 @@ impl SecondMeter {
         f.db.push(db(mean_sq.sqrt()));
 
         // 50 slices of 20 ms.
-        let slices: Vec<f32> = x.chunks(320).map(|c| c.iter().map(|v| v * v).sum::<f32>() / 320.0 + 1e-12).collect();
+        let slices: Vec<f32> = x
+            .chunks(320)
+            .map(|c| c.iter().map(|v| v * v).sum::<f32>() / 320.0 + 1e-12)
+            .collect();
         let avg = slices.iter().sum::<f32>() / slices.len() as f32;
-        f.ler.push(slices.iter().filter(|&&e| e < 0.5 * avg).count() as f32 / slices.len() as f32);
+        f.ler
+            .push(slices.iter().filter(|&&e| e < 0.5 * avg).count() as f32 / slices.len() as f32);
         let sdb: Vec<f32> = slices.iter().map(|e| 10.0 * e.log10()).collect();
         let m = sdb.iter().sum::<f32>() / sdb.len() as f32;
-        f.swing.push((sdb.iter().map(|v| (v - m) * (v - m)).sum::<f32>() / sdb.len() as f32).sqrt());
+        f.swing
+            .push((sdb.iter().map(|v| (v - m) * (v - m)).sum::<f32>() / sdb.len() as f32).sqrt());
 
         // 1 Hz bins: bin k is k Hz.
         for (i, c) in self.scratch.iter_mut().enumerate() {
@@ -114,14 +123,23 @@ pub fn measure_file(
     if !file.exists() {
         bail!("{} does not exist", file.display());
     }
-    let mut args: Vec<OsString> = ["-hide_banner", "-nostdin", "-loglevel", "error", "-i"].iter().map(OsString::from).collect();
+    let mut args: Vec<OsString> = ["-hide_banner", "-nostdin", "-loglevel", "error", "-i"]
+        .iter()
+        .map(OsString::from)
+        .collect();
     args.push(file.as_os_str().to_owned());
-    args.extend(["-vn", "-ac", "1", "-ar", "16000", "-f", "s16le", "-"].iter().map(OsString::from));
+    args.extend(
+        ["-vn", "-ac", "1", "-ar", "16000", "-f", "s16le", "-"]
+            .iter()
+            .map(OsString::from),
+    );
 
     let mut meter = SecondMeter::default();
     let mut features = Features::default();
     let mut samples = vec![0f32; SR];
-    let mut last = Instant::now().checked_sub(Duration::from_secs(5)).unwrap_or_else(Instant::now);
+    let mut last = Instant::now()
+        .checked_sub(Duration::from_secs(5))
+        .unwrap_or_else(Instant::now);
     let (ok, stderr) = run::stream_bytes(ffmpeg, &args, SR * 2, |bytes| {
         if bytes.len() < SR * 2 {
             return; // a final partial second is ignored
@@ -132,13 +150,22 @@ pub fn measure_file(
         meter.measure(&samples, &mut features);
         if let Some(d) = duration.filter(|d| *d > 0.0) {
             if last.elapsed() >= Duration::from_millis(500) {
-                sink.emit(Event::progress(step, features.seconds() as f64 / d, None, None));
+                sink.emit(Event::progress(
+                    step,
+                    features.seconds() as f64 / d,
+                    None,
+                    None,
+                ));
                 last = Instant::now();
             }
         }
     })?;
     if !ok {
-        bail!("ffmpeg could not decode the audio of {}: {}", file.display(), run::tail(&stderr, 4));
+        bail!(
+            "ffmpeg could not decode the audio of {}: {}",
+            file.display(),
+            run::tail(&stderr, 4)
+        );
     }
     if features.seconds() == 0 {
         bail!("{} has no audio", file.display());
@@ -151,7 +178,9 @@ mod tests {
     use super::*;
 
     fn tone(freq: f32, amp: f32) -> Vec<f32> {
-        (0..SR).map(|i| amp * (2.0 * std::f32::consts::PI * freq * i as f32 / SR as f32).sin()).collect()
+        (0..SR)
+            .map(|i| amp * (2.0 * std::f32::consts::PI * freq * i as f32 / SR as f32).sin())
+            .collect()
     }
 
     #[test]

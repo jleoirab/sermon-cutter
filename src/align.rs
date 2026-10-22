@@ -27,7 +27,9 @@ pub struct Alignment {
 }
 
 fn mean_by(v: &[f32], k: usize) -> Vec<f32> {
-    v.chunks_exact(k).map(|c| c.iter().sum::<f32>() / k as f32).collect()
+    v.chunks_exact(k)
+        .map(|c| c.iter().sum::<f32>() / k as f32)
+        .collect()
 }
 
 /// Best normalised correlation of `query` inside `hay[lo..hi + query.len()]`.
@@ -67,7 +69,10 @@ fn best_match(hay: &[f32], query: &[f32], lo: usize, hi: usize) -> Option<(usize
 /// first to the second, then to the tenth of a second.
 fn locate(stream: &[f32], fin: &[f32], from: f64, len: f64) -> Option<(f64, f64)> {
     let r = ENV_RATE;
-    let (a, b) = ((from * r as f64) as usize, ((from + len) * r as f64) as usize);
+    let (a, b) = (
+        (from * r as f64) as usize,
+        ((from + len) * r as f64) as usize,
+    );
     if b > fin.len() {
         return None;
     }
@@ -75,7 +80,12 @@ fn locate(stream: &[f32], fin: &[f32], from: f64, len: f64) -> Option<(f64, f64)
     let coarse_q = mean_by(&fin[a..b], r);
     let (p, _) = best_match(&coarse_hay, &coarse_q, 0, coarse_hay.len())?;
     let centre = p * r;
-    let (fine, score) = best_match(stream, &fin[a..b], centre.saturating_sub(3 * r), centre + 3 * r)?;
+    let (fine, score) = best_match(
+        stream,
+        &fin[a..b],
+        centre.saturating_sub(3 * r),
+        centre + 3 * r,
+    )?;
     Some((fine as f64 / r as f64 - from, score))
 }
 
@@ -89,10 +99,10 @@ pub fn align(stream: &[f32], fin: &[f32]) -> Result<Alignment> {
     let span = 60f64.min(final_len / 3.0);
     let start_from = 30f64.min(final_len / 6.0);
     let end_from = final_len - span - 10f64.min(final_len / 6.0);
-    let (start_off, start_score) =
-        locate(stream, fin, start_from, span).ok_or_else(|| anyhow::anyhow!("could not match the start"))?;
-    let (end_off, end_score) =
-        locate(stream, fin, end_from, span).ok_or_else(|| anyhow::anyhow!("could not match the end"))?;
+    let (start_off, start_score) = locate(stream, fin, start_from, span)
+        .ok_or_else(|| anyhow::anyhow!("could not match the start"))?;
+    let (end_off, end_score) = locate(stream, fin, end_from, span)
+        .ok_or_else(|| anyhow::anyhow!("could not match the end"))?;
     if start_score < MIN_SCORE || end_score < MIN_SCORE {
         bail!(
             "the final cut does not match this stream (scores {start_score:.2} and {end_score:.2}); is it the right stream?"
@@ -125,7 +135,9 @@ mod tests {
         let mut level = -20.0f32;
         (0..len)
             .map(|_| {
-                s = s.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+                s = s
+                    .wrapping_mul(6364136223846793005)
+                    .wrapping_add(1442695040888963407);
                 level += ((s >> 33) as f32 / (1u64 << 31) as f32 - 0.5) * 4.0;
                 level = level.clamp(-60.0, -5.0);
                 level

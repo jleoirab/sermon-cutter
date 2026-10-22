@@ -30,14 +30,43 @@ const SEAT_PHRASES: &[&[&str]] = &[
 const CLOSERS: &[&str] = &["prayed", "amen"];
 /// Words that start the offering or the announcements.
 const NEXT_PART: &[&str] = &[
-    "offering", "offerings", "tithe", "tithes", "giving", "give", "seed", "announcement", "announcements",
-    "link", "register", "visitor", "visitors", "timers", "volunteer", "volunteers", "welcome", "partner",
-    "partners", "close",
+    "offering",
+    "offerings",
+    "tithe",
+    "tithes",
+    "giving",
+    "give",
+    "seed",
+    "announcement",
+    "announcements",
+    "link",
+    "register",
+    "visitor",
+    "visitors",
+    "timers",
+    "volunteer",
+    "volunteers",
+    "welcome",
+    "partner",
+    "partners",
+    "close",
 ];
 /// A short sentence of only these words right after the cue still belongs to
 /// the preacher's sign-off ("Thank you, Jesus.", "Hallelujah!").
 const PRAISE: &[&str] = &[
-    "thank", "you", "jesus", "lord", "father", "hallelujah", "amen", "glory", "to", "god", "praise", "the", "bless",
+    "thank",
+    "you",
+    "jesus",
+    "lord",
+    "father",
+    "hallelujah",
+    "amen",
+    "glory",
+    "to",
+    "god",
+    "praise",
+    "the",
+    "bless",
     "yes",
 ];
 /// How far (seconds) to look before and after a cue for its context.
@@ -52,7 +81,8 @@ pub fn norm(w: &str) -> String {
 }
 
 fn ends_sentence(w: &str) -> bool {
-    w.trim_end_matches(['"', '\'', ')']).ends_with(['.', '!', '?'])
+    w.trim_end_matches(['"', '\'', ')'])
+        .ends_with(['.', '!', '?'])
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -82,8 +112,14 @@ pub fn find_cues(words: &[Word]) -> Vec<Cue> {
     let phrase_at = |i: usize| {
         SEAT_PHRASES
             .iter()
-            .find(|p| i + p.len() <= normed.len() && p.iter().enumerate().all(|(k, w)| normed[i + k] == *w))
+            .find(|p| {
+                i + p.len() <= normed.len()
+                    && p.iter().enumerate().all(|(k, w)| normed[i + k] == *w)
+            })
             .map(|p| p.len())
+            // whisper sometimes drops "please be" and keeps only "seated.",
+            // as on Sept 20, so a sentence ending in "seated" counts too.
+            .or_else(|| (normed[i] == "seated" && ends_sentence(&words[i].text)).then_some(1))
     };
     let mut cues = Vec::new();
     let mut i = 0;
@@ -102,7 +138,12 @@ pub fn find_cues(words: &[Word]) -> Vec<Cue> {
                 }
                 let sentence = (last + 1)..(j + 1).min(words.len());
                 let len = sentence.len();
-                if len == 0 || len > 4 || !normed[sentence.clone()].iter().all(|w| PRAISE.contains(&w.as_str())) {
+                if len == 0
+                    || len > 4
+                    || !normed[sentence.clone()]
+                        .iter()
+                        .all(|w| PRAISE.contains(&w.as_str()))
+                {
                     break;
                 }
                 last = sentence.end - 1;
@@ -119,12 +160,28 @@ pub fn find_cues(words: &[Word]) -> Vec<Cue> {
         let (at, out) = (words[i].start, words[last].end);
         let before = |w: &&Word| w.start >= at - CONTEXT && w.start < at;
         let after = |w: &&Word| w.start > out && w.start <= out + CONTEXT;
-        let after_prayer = words.iter().filter(before).any(|w| CLOSERS.contains(&norm(&w.text).as_str()));
-        let before_next_part = words.iter().filter(after).any(|w| NEXT_PART.contains(&norm(&w.text).as_str()));
+        let after_prayer = words
+            .iter()
+            .filter(before)
+            .any(|w| CLOSERS.contains(&norm(&w.text).as_str()));
+        let before_next_part = words
+            .iter()
+            .filter(after)
+            .any(|w| NEXT_PART.contains(&norm(&w.text).as_str()));
         let lo = i.saturating_sub(8);
         let hi = (last + 9).min(words.len());
-        let context = words[lo..hi].iter().map(|w| w.text.as_str()).collect::<Vec<_>>().join(" ");
-        cues.push(Cue { at, out, context, after_prayer, before_next_part });
+        let context = words[lo..hi]
+            .iter()
+            .map(|w| w.text.as_str())
+            .collect::<Vec<_>>()
+            .join(" ");
+        cues.push(Cue {
+            at,
+            out,
+            context,
+            after_prayer,
+            before_next_part,
+        });
         i = last + 1;
     }
     cues
@@ -138,7 +195,9 @@ pub fn choose(cues: &[Cue], not_before: f64) -> Option<(Cue, &'static str)> {
     if let Some(c) = eligible.iter().find(|c| c.score() == 2) {
         return Some(((*c).clone(), "high"));
     }
-    let best = eligible.iter().max_by(|a, b| a.score().cmp(&b.score()).then(b.at.total_cmp(&a.at)))?;
+    let best = eligible
+        .iter()
+        .max_by(|a, b| a.score().cmp(&b.score()).then(b.at.total_cmp(&a.at)))?;
     Some(((*best).clone(), "medium"))
 }
 
@@ -152,7 +211,11 @@ pub fn prayer_close_before_next_part(words: &[Word], not_before: f64) -> Option<
         .next()?;
     words
         .iter()
-        .filter(|w| w.start >= first_next - CONTEXT && w.start < first_next && CLOSERS.contains(&norm(&w.text).as_str()))
+        .filter(|w| {
+            w.start >= first_next - CONTEXT
+                && w.start < first_next
+                && CLOSERS.contains(&norm(&w.text).as_str())
+        })
         .map(|w| w.end)
         .next_back()
 }
@@ -167,11 +230,13 @@ pub const EARLIEST_OUT: f64 = 25.0 * 60.0;
 /// `hear(a, len)` returns the words of [a, a + len); windows already in
 /// `t` are not heard again. `after_window(t, b)` runs after each window
 /// (to save the words and report progress). Returns how far it heard.
+/// With `to_the_end` it hears all the way to `until` (for scoring).
 pub fn listen_for_out(
     t: &mut Transcript,
     not_before: f64,
     from: f64,
     until: f64,
+    to_the_end: bool,
     mut hear: impl FnMut(f64, f64) -> Result<Vec<Word>>,
     mut after_window: impl FnMut(&Transcript, f64) -> Result<()>,
 ) -> Result<f64> {
@@ -187,7 +252,7 @@ pub fn listen_for_out(
         }
         after_window(t, b)?;
         let heard: Vec<Word> = t.words.iter().filter(|w| w.start < b).cloned().collect();
-        if let Some((c, "high")) = choose(&find_cues(&heard), not_before) {
+        if let (false, Some((c, "high"))) = (to_the_end, choose(&find_cues(&heard), not_before)) {
             if c.out + CONTEXT <= b || b >= until {
                 return Ok(b);
             }
@@ -246,14 +311,38 @@ pub struct OutFinding {
 /// the prayer close before the offering, else `fallback` (the end of the
 /// sermon's run of speech).
 pub fn decide(words: &[Word], not_before: f64, fallback: f64) -> OutFinding {
-    let cues: Vec<Cue> = find_cues(words).into_iter().filter(|c| c.at >= not_before).collect();
+    let cues: Vec<Cue> = find_cues(words)
+        .into_iter()
+        .filter(|c| c.at >= not_before)
+        .collect();
     if let Some((c, confidence)) = choose(&cues, not_before) {
-        return OutFinding { out: c.out, confidence, method: "seat_cue", cue: Some(c), cues, retimed_by: None };
+        return OutFinding {
+            out: c.out,
+            confidence,
+            method: "seat_cue",
+            cue: Some(c),
+            cues,
+            retimed_by: None,
+        };
     }
     if let Some(out) = prayer_close_before_next_part(words, not_before) {
-        return OutFinding { out, confidence: "low", method: "prayer_close", cue: None, cues, retimed_by: None };
+        return OutFinding {
+            out,
+            confidence: "low",
+            method: "prayer_close",
+            cue: None,
+            cues,
+            retimed_by: None,
+        };
     }
-    OutFinding { out: fallback, confidence: "low", method: "speech_run_end", cue: None, cues, retimed_by: None }
+    OutFinding {
+        out: fallback,
+        confidence: "low",
+        method: "speech_run_end",
+        cue: None,
+        cues,
+        retimed_by: None,
+    }
 }
 
 #[cfg(test)]
@@ -264,7 +353,11 @@ mod tests {
     fn say(t0: f64, text: &str) -> Vec<Word> {
         text.split_whitespace()
             .enumerate()
-            .map(|(i, w)| Word { start: t0 + i as f64 * 0.4, end: t0 + i as f64 * 0.4 + 0.4, text: w.into() })
+            .map(|(i, w)| Word {
+                start: t0 + i as f64 * 0.4,
+                end: t0 + i as f64 * 0.4 + 0.4,
+                text: w.into(),
+            })
             .collect()
     }
 
@@ -302,13 +395,20 @@ mod tests {
         let (c, conf) = choose(&cues, 0.0).unwrap();
         assert_eq!(conf, "high");
         // One cue from "take our seats" through "be seated.", the 13th word.
-        assert!((c.out - (7446.7 + 12.0 * 0.4 + 0.4)).abs() < 1e-9, "{}", c.out);
+        assert!(
+            (c.out - (7446.7 + 12.0 * 0.4 + 0.4)).abs() < 1e-9,
+            "{}",
+            c.out
+        );
     }
 
     #[test]
     fn a_mid_sermon_sit_down_without_offering_is_not_preferred() {
         let mut w = joined(&[(1000.0, "Everybody stand up and shout. Now you may sit down. Let us continue in the book of Acts.")]);
-        w.extend(joined(&[(5000.0, "In Jesus name we have prayed. Amen. Please be seated. It's time for the offering.")]));
+        w.extend(joined(&[(
+            5000.0,
+            "In Jesus name we have prayed. Amen. Please be seated. It's time for the offering.",
+        )]));
         let (c, conf) = choose(&find_cues(&w), 0.0).unwrap();
         assert_eq!(conf, "high");
         assert!(c.at > 5000.0);
@@ -326,7 +426,10 @@ mod tests {
     fn listening_stops_once_the_cue_and_its_context_are_heard() {
         let all = joined(&[
             (2000.0, "Let us pray. Amen. You may sit down."), // too early to count
-            (5000.0, "In Jesus name we have prayed. Amen. Please be seated."),
+            (
+                5000.0,
+                "In Jesus name we have prayed. Amen. Please be seated.",
+            ),
             (5100.0, "Now it's time for the offering."),
             (7000.0, "Welcome to everyone. Please be seated."),
         ]);
@@ -337,9 +440,14 @@ mod tests {
             3500.0,
             3500.0,
             9000.0,
+            false,
             |a, len| {
                 heard.push(a);
-                Ok(all.iter().filter(|w| w.start >= a - 5.0 && w.start < a + len).cloned().collect())
+                Ok(all
+                    .iter()
+                    .filter(|w| w.start >= a - 5.0 && w.start < a + len)
+                    .cloned()
+                    .collect())
             },
             |_, _| Ok(()),
         )
@@ -354,18 +462,39 @@ mod tests {
 
         // A second look hears nothing new.
         let mut again = 0;
-        listen_for_out(&mut t, 3500.0, 3500.0, 9000.0, |_, _| { again += 1; Ok(vec![]) }, |_, _| Ok(())).unwrap();
+        listen_for_out(
+            &mut t,
+            3500.0,
+            3500.0,
+            9000.0,
+            false,
+            |_, _| {
+                again += 1;
+                Ok(vec![])
+            },
+            |_, _| Ok(()),
+        )
+        .unwrap();
         assert_eq!(again, 0);
     }
 
     #[test]
     fn retiming_moves_the_out_to_the_short_window() {
-        let long = joined(&[(8946.0, "In Jesus name we have prayed. Amen. God bless you, please be seated."), (8970.0, "Fill that link.")]);
+        let long = joined(&[
+            (
+                8946.0,
+                "In Jesus name we have prayed. Amen. God bless you, please be seated.",
+            ),
+            (8970.0, "Fill that link."),
+        ]);
         let mut f = decide(&long, 0.0, 9500.0);
         let (from, len) = retime_window(f.cue.as_ref().unwrap());
         assert_eq!((from, len), (f.cue.as_ref().unwrap().at - 45.0, 90.0));
         // Heard alone, the same words land 3 s later.
-        let short = joined(&[(8949.0, "In Jesus name we have prayed. Amen. God bless you, please be seated.")]);
+        let short = joined(&[(
+            8949.0,
+            "In Jesus name we have prayed. Amen. God bless you, please be seated.",
+        )]);
         let before = f.out;
         retime(&mut f, &short);
         assert!((f.out - before - 3.0).abs() < 1e-9);
@@ -378,8 +507,15 @@ mod tests {
 
     #[test]
     fn decide_falls_back_to_the_speech_run() {
-        let d = decide(&joined(&[(5000.0, "and so we go on with the story")]), 0.0, 6100.0);
-        assert_eq!((d.method, d.confidence, d.out), ("speech_run_end", "low", 6100.0));
+        let d = decide(
+            &joined(&[(5000.0, "and so we go on with the story")]),
+            0.0,
+            6100.0,
+        );
+        assert_eq!(
+            (d.method, d.confidence, d.out),
+            ("speech_run_end", "low", 6100.0)
+        );
     }
 
     #[test]

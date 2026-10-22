@@ -41,7 +41,10 @@ impl Tools {
             .filter(|p| p.is_file())
             .or_else(|| {
                 let models = d?.join("models");
-                WHISPER_MODELS.iter().map(|m| models.join(m)).find(|p| p.is_file())
+                WHISPER_MODELS
+                    .iter()
+                    .map(|m| models.join(m))
+                    .find(|p| p.is_file())
             });
         Tools {
             ffmpeg: find(&["ffmpeg"], "SERMONCUT_FFMPEG", d),

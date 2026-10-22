@@ -52,7 +52,9 @@ impl Transcript {
     }
 
     pub fn covers(&self, a: f64, b: f64) -> bool {
-        self.covered.iter().any(|(x, y)| *x <= a + 0.5 && *y >= b - 0.5)
+        self.covered
+            .iter()
+            .any(|(x, y)| *x <= a + 0.5 && *y >= b - 0.5)
     }
 
     /// Adds the words of window [a, b), heard with a few seconds of run-up.
@@ -62,7 +64,11 @@ impl Transcript {
     pub fn add(&mut self, a: f64, b: f64, words: Vec<Word>) {
         let split = a - 2.5;
         self.words.retain(|w| w.start < split || w.start >= b);
-        self.words.extend(words.into_iter().filter(|w| w.start >= split && w.start < b));
+        self.words.extend(
+            words
+                .into_iter()
+                .filter(|w| w.start >= split && w.start < b),
+        );
         self.words.sort_by(|x, y| x.start.total_cmp(&y.start));
         self.covered.push((a, b));
     }
@@ -80,7 +86,9 @@ impl Transcript {
 /// shifting times by `offset` seconds.
 pub fn parse_whisper_json(json: &str, offset: f64) -> Result<Vec<Word>> {
     let v: Value = serde_json::from_str(json).context("whisper.cpp did not write JSON")?;
-    let items = v["transcription"].as_array().context("no transcription in whisper.cpp output")?;
+    let items = v["transcription"]
+        .as_array()
+        .context("no transcription in whisper.cpp output")?;
     Ok(items
         .iter()
         .filter_map(|it| {
@@ -91,7 +99,11 @@ pub fn parse_whisper_json(json: &str, offset: f64) -> Result<Vec<Word>> {
             }
             let from = it["offsets"]["from"].as_f64()? / 1000.0 + offset;
             let to = it["offsets"]["to"].as_f64()? / 1000.0 + offset;
-            Some(Word { start: from, end: to.max(from), text })
+            Some(Word {
+                start: from,
+                end: to.max(from),
+                text,
+            })
         })
         .collect())
 }
@@ -112,30 +124,58 @@ impl Transcriber<'_> {
         let wav = work.join("window.wav");
         let base = work.join("words");
 
-        let mut cut: Vec<OsString> = ["-hide_banner", "-nostdin", "-loglevel", "error", "-y", "-ss"]
-            .iter()
-            .map(OsString::from)
-            .collect();
+        let mut cut: Vec<OsString> = [
+            "-hide_banner",
+            "-nostdin",
+            "-loglevel",
+            "error",
+            "-y",
+            "-ss",
+        ]
+        .iter()
+        .map(OsString::from)
+        .collect();
         cut.push(crate::num(from).into());
         cut.push("-t".into());
         cut.push(crate::num(len + run_up).into());
         cut.push("-i".into());
         cut.push(media.as_os_str().to_owned());
-        cut.extend(["-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le"].iter().map(OsString::from));
+        cut.extend(
+            ["-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le"]
+                .iter()
+                .map(OsString::from),
+        );
         cut.push(wav.as_os_str().to_owned());
         let out = run::capture(self.ffmpeg, &cut)?;
         if !out.ok {
             let _ = std::fs::remove_dir_all(&work);
-            bail!("ffmpeg could not cut audio for transcription: {}", run::tail(&out.stderr, 3));
+            bail!(
+                "ffmpeg could not cut audio for transcription: {}",
+                run::tail(&out.stderr, 3)
+            );
         }
 
-        let threads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(4).to_string();
-        let mut args: Vec<OsString> = vec!["-m".into(), self.model.as_os_str().to_owned(), "-f".into(), wav.as_os_str().to_owned()];
+        let threads = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4)
+            .to_string();
+        let mut args: Vec<OsString> = vec![
+            "-m".into(),
+            self.model.as_os_str().to_owned(),
+            "-f".into(),
+            wav.as_os_str().to_owned(),
+        ];
         // Greedy decoding with one word per item: fast, and gives word times.
+        // `-mc 0` stops whisper prompting itself with the words it just
+        // wrote; with them it can loop on one line for minutes ("I set you
+        // free" fifty times on Sept 20) and drop the words that matter.
         args.extend(
-            ["-l", "en", "-t", &threads, "-bs", "1", "-bo", "1", "-ml", "1", "-sow", "-oj", "-np", "-of"]
-                .iter()
-                .map(OsString::from),
+            [
+                "-l", "en", "-t", &threads, "-bs", "1", "-bo", "1", "-mc", "0", "-ml", "1", "-sow",
+                "-oj", "-np", "-of",
+            ]
+            .iter()
+            .map(OsString::from),
         );
         args.push(base.as_os_str().to_owned());
         let res = run::capture(self.whisper, &args);
@@ -144,7 +184,10 @@ impl Transcriber<'_> {
             Ok(o) if o.ok => std::fs::read_to_string(&json_path)
                 .context("whisper.cpp wrote no transcript")
                 .and_then(|j| parse_whisper_json(&j, from)),
-            Ok(o) => Err(anyhow::anyhow!("whisper.cpp failed: {}", run::tail(&o.stderr, 4))),
+            Ok(o) => Err(anyhow::anyhow!(
+                "whisper.cpp failed: {}",
+                run::tail(&o.stderr, 4)
+            )),
             Err(e) => Err(e),
         };
         let _ = std::fs::remove_dir_all(&work);
@@ -183,7 +226,11 @@ mod tests {
     }
 
     fn word(start: f64, text: &str) -> Word {
-        Word { start, end: start + 0.4, text: text.into() }
+        Word {
+            start,
+            end: start + 0.4,
+            text: text.into(),
+        }
     }
 
     #[test]
@@ -191,7 +238,15 @@ mod tests {
         let mut t = Transcript::default();
         t.add(0.0, 600.0, vec![word(598.0, "be"), word(599.5, "sea-")]);
         // The next window re-hears the edge, starting 5 s earlier.
-        t.add(600.0, 1200.0, vec![word(598.1, "be"), word(599.6, "seated."), word(601.0, "Now")]);
+        t.add(
+            600.0,
+            1200.0,
+            vec![
+                word(598.1, "be"),
+                word(599.6, "seated."),
+                word(601.0, "Now"),
+            ],
+        );
         let texts: Vec<&str> = t.words.iter().map(|w| w.text.as_str()).collect();
         assert_eq!(texts, ["be", "seated.", "Now"]);
         assert!(t.covers(600.0, 1200.0));

@@ -7,14 +7,14 @@
 use anyhow::Result;
 use clap::{Parser, Subcommand, ValueEnum};
 use serde_json::json;
+use sermoncut::audio::{self, Features};
 use sermoncut::events::{Event, Sink, StdoutSink};
 use sermoncut::fetch::{self, Part};
 use sermoncut::render::{self, RenderRequest};
 use sermoncut::timings::Timings;
 use sermoncut::tools::Tools;
-use sermoncut::verify::{self, Expect};
-use sermoncut::audio::{self, Features};
 use sermoncut::transcribe::{Spot, Transcriber, Transcript};
+use sermoncut::verify::{self, Expect};
 use sermoncut::{align, analysis, cues, encoders, parse_bitrate, probe, timecode};
 use std::path::PathBuf;
 
@@ -70,6 +70,9 @@ enum Command {
         /// Don't listen for the words; the Out is then only a rough guess.
         #[arg(long)]
         no_transcribe: bool,
+        /// Hear every window to the end instead of stopping at the cue (for scoring).
+        #[arg(long, hide = true)]
+        hear_all: bool,
     },
 
     /// Find where a finished cut sits in its stream by matching their sound.
@@ -205,7 +208,9 @@ fn measurements(
             return Ok(f);
         }
     }
-    let duration = probe::probe(tools.ffprobe()?, file).ok().map(|m| m.duration);
+    let duration = probe::probe(tools.ffprobe()?, file)
+        .ok()
+        .map(|m| m.duration);
     let f = audio::measure_file(tools.ffmpeg()?, file, duration, step, sink)?;
     if let Some(c) = cache {
         std::fs::write(c, serde_json::to_string(&f)?)?;
@@ -247,24 +252,34 @@ fn run(cli: Cli, sink: &dyn Sink) -> Result<()> {
             transcript_cache,
             model,
             no_transcribe,
+            hear_all,
         } => {
             let f = measurements(&tools, &stream, cache.as_deref(), "find_listen", sink)?;
             let s = analysis::find_sermon(&f).ok_or_else(|| {
-                anyhow::anyhow!("no stretch of speech long enough to be a sermon was found in this stream")
+                anyhow::anyhow!(
+                    "no stretch of speech long enough to be a sermon was found in this stream"
+                )
             })?;
             let cut_in = analysis::in_point(&f, s.preacher_starts, lead_in);
             let stream_len = f.seconds() as f64;
             let not_before = s.preacher_starts as f64 + cues::EARLIEST_OUT;
             let fallback = s.speech_run_ends as f64;
 
-            let mut t = transcript_cache.as_deref().map(Transcript::load).unwrap_or_default();
+            let mut t = transcript_cache
+                .as_deref()
+                .map(Transcript::load)
+                .unwrap_or_default();
             let mut heard_until = None;
             let ear = if !no_transcribe && not_before < stream_len {
                 let model = match &model {
                     Some(m) => m.as_path(),
                     None => tools.whisper_model()?,
                 };
-                Some(Transcriber { ffmpeg: tools.ffmpeg()?, whisper: tools.whisper()?, model })
+                Some(Transcriber {
+                    ffmpeg: tools.ffmpeg()?,
+                    whisper: tools.whisper()?,
+                    model,
+                })
             } else {
                 None
             };
@@ -277,12 +292,18 @@ fn run(cli: Cli, sink: &dyn Sink) -> Result<()> {
                     not_before,
                     not_before,
                     until,
+                    hear_all,
                     |a, len| ear.window(&stream, a, len),
                     |t, b| {
                         if let Some(c) = &transcript_cache {
                             t.save(c)?;
                         }
-                        sink.emit(Event::progress("find_words", (b - not_before) / span, None, Some(timecode::format(b))));
+                        sink.emit(Event::progress(
+                            "find_words",
+                            (b - not_before) / span,
+                            None,
+                            Some(timecode::format(b)),
+                        ));
                         Ok(())
                     },
                 )?;
@@ -301,7 +322,11 @@ fn run(cli: Cli, sink: &dyn Sink) -> Result<()> {
                     Some(w) => w.to_vec(),
                     None => {
                         let w = ear.window(&stream, a, len)?;
-                        t.spots.push(Spot { start: a, len, words: w.clone() });
+                        t.spots.push(Spot {
+                            start: a,
+                            len,
+                            words: w.clone(),
+                        });
                         if let Some(c) = &transcript_cache {
                             t.save(c)?;
                         }
@@ -343,7 +368,13 @@ fn run(cli: Cli, sink: &dyn Sink) -> Result<()> {
             final_cache,
         } => {
             let s = measurements(&tools, &stream, cache.as_deref(), "align_stream", sink)?;
-            let f = measurements(&tools, &final_cut, final_cache.as_deref(), "align_final", sink)?;
+            let f = measurements(
+                &tools,
+                &final_cut,
+                final_cache.as_deref(),
+                "align_final",
+                sink,
+            )?;
             let a = align::align(&s.env, &f.env)?;
             let mut v = serde_json::to_value(&a)?;
             v["in_tc"] = json!(timecode::format(a.cut_in));

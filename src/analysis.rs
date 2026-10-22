@@ -73,7 +73,12 @@ pub fn label(f: &Features) -> Labels {
     let speech = (0..n)
         .map(|i| !silent[i] && f.bass[i] <= MUSIC_BASS && f.swing[i] > SPEECH_SWING)
         .collect();
-    Labels { silent, music, speech, dead_air }
+    Labels {
+        silent,
+        music,
+        speech,
+        dead_air,
+    }
 }
 
 /// Running totals, so any window's count is one subtraction.
@@ -108,7 +113,11 @@ fn share(x: &Totals, voiced: &Totals, a: usize, b: usize) -> f32 {
 pub fn smooth(l: &Labels) -> Vec<Kind> {
     let n = l.silent.len();
     let voiced: Vec<bool> = l.silent.iter().map(|s| !s).collect();
-    let (v, m, s) = (Totals::of(&voiced), Totals::of(&l.music), Totals::of(&l.speech));
+    let (v, m, s) = (
+        Totals::of(&voiced),
+        Totals::of(&l.music),
+        Totals::of(&l.speech),
+    );
     let half = SMOOTH / 2;
     (0..n)
         .map(|i| {
@@ -131,7 +140,11 @@ pub fn runs(kinds: &[Kind]) -> Vec<Run> {
     let mut start = 0;
     for i in 1..=kinds.len() {
         if i == kinds.len() || kinds[i] != kinds[start] {
-            out.push(Run { start, end: i, kind: kinds[start] });
+            out.push(Run {
+                start,
+                end: i,
+                kind: kinds[start],
+            });
             start = i;
         }
     }
@@ -193,7 +206,11 @@ pub fn find_sermon(f: &Features) -> Option<SermonFinding> {
     }
     let l = label(f);
     let voiced: Vec<bool> = l.silent.iter().map(|s| !s).collect();
-    let (v, m, s) = (Totals::of(&voiced), Totals::of(&l.music), Totals::of(&l.speech));
+    let (v, m, s) = (
+        Totals::of(&voiced),
+        Totals::of(&l.music),
+        Totals::of(&l.speech),
+    );
     let long = long_music(&l);
 
     // For every second, where the next long stretch of music begins.
@@ -300,19 +317,44 @@ mod tests {
             (300, Speech),  // announcements
         ]);
         let s = find_sermon(&f).unwrap();
-        assert!(s.preacher_starts.abs_diff(3300) <= 20, "{}", s.preacher_starts);
+        assert!(
+            s.preacher_starts.abs_diff(3300) <= 20,
+            "{}",
+            s.preacher_starts
+        );
         assert_eq!(s.start_confidence, "high");
-        assert!(s.speech_run_ends.abs_diff(7600) <= 60, "{}", s.speech_run_ends);
+        assert!(
+            s.speech_run_ends.abs_diff(7600) <= 60,
+            "{}",
+            s.speech_run_ends
+        );
         let cut_in = in_point(&f, s.preacher_starts, 120.0);
-        assert!((cut_in - (s.preacher_starts as f64 - 120.0)).abs() <= 3.0, "{cut_in}");
+        assert!(
+            (cut_in - (s.preacher_starts as f64 - 120.0)).abs() <= 3.0,
+            "{cut_in}"
+        );
     }
 
     #[test]
     fn a_song_inside_the_sermon_does_not_end_it() {
-        let f = service(&[(1200, Music), (1700, Speech), (210, Music), (2700, Speech), (600, Music)]);
+        let f = service(&[
+            (1200, Music),
+            (1700, Speech),
+            (210, Music),
+            (2700, Speech),
+            (600, Music),
+        ]);
         let s = find_sermon(&f).unwrap();
-        assert!(s.preacher_starts.abs_diff(1200) <= 20, "{}", s.preacher_starts);
-        assert!(s.speech_run_ends >= 5700, "sermon ended at {}", s.speech_run_ends);
+        assert!(
+            s.preacher_starts.abs_diff(1200) <= 20,
+            "{}",
+            s.preacher_starts
+        );
+        assert!(
+            s.speech_run_ends >= 5700,
+            "sermon ended at {}",
+            s.speech_run_ends
+        );
     }
 
     #[test]
@@ -323,14 +365,30 @@ mod tests {
             f.swing[i] = 2.0;
         }
         let s = find_sermon(&f).unwrap();
-        assert!(s.preacher_starts.abs_diff(900) <= 20, "{}", s.preacher_starts);
+        assert!(
+            s.preacher_starts.abs_diff(900) <= 20,
+            "{}",
+            s.preacher_starts
+        );
     }
 
     #[test]
     fn dropouts_do_not_end_the_sermon() {
-        let f = service(&[(1200, Music), (1500, Speech), (110, Silent), (70, Music), (500, Silent), (1500, Speech), (400, Music)]);
+        let f = service(&[
+            (1200, Music),
+            (1500, Speech),
+            (110, Silent),
+            (70, Music),
+            (500, Silent),
+            (1500, Speech),
+            (400, Music),
+        ]);
         let s = find_sermon(&f).unwrap();
-        assert!(s.speech_run_ends >= 4800, "sermon ended at {}", s.speech_run_ends);
+        assert!(
+            s.speech_run_ends >= 4800,
+            "sermon ended at {}",
+            s.speech_run_ends
+        );
         assert!(s.dead_air_seconds >= 600, "{}", s.dead_air_seconds);
     }
 
