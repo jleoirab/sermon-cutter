@@ -207,3 +207,5 @@ The listening covered 50 to 80 minutes of each stream. On the 2022 MacBook Pro, 
 | Sept 13, 20, 27, Oct 4 | Good | Nothing (sound) |
 | Oct 11 | Good | Nothing (sound and picture) |
 | Oct 18 | Not usable | Sound lost 11 times, 16 min 31 s in all (21%), the longest 8 min 17 s; the holding screen for 12 min 44 s, from 2:01:30 to 2:14:55; 3 choppy minutes; 4 one-second black flashes |
+
+On the 2022 MacBook Pro, `check` on the Oct 18 video took 1 min 20 s in all. That includes measuring the whole stream's sound and scanning 81 minutes of 1080p picture; the verdict came out Not usable.
