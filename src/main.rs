@@ -52,6 +52,16 @@ enum Command {
     /// Read a stream's title, length and formats without downloading it.
     Info { url: String },
 
+    /// List a channel's newest streams, without downloading anything.
+    Streams {
+        /// The channel's streams page.
+        #[arg(default_value = fetch::CHANNEL_STREAMS)]
+        page: String,
+        /// How many to list.
+        #[arg(long, default_value_t = 8)]
+        count: usize,
+    },
+
     /// Find the sermon in a downloaded stream and propose In and Out.
     Find {
         /// The downloaded stream (its audio file is enough).
@@ -249,6 +259,7 @@ fn step_name(c: &Command) -> &'static str {
         Command::Tools => "tools",
         Command::Encoders => "encoders",
         Command::Info { .. } => "info",
+        Command::Streams { .. } => "streams",
         Command::Find { .. } => "find",
         Command::Align { .. } => "align",
         Command::Check { .. } => quality::STEP,
@@ -271,6 +282,10 @@ fn run(cli: Cli, sink: &dyn Sink) -> Result<()> {
         Command::Info { url } => {
             let info = fetch::info(&tools, &url)?;
             sink.emit(Event::result("info", serde_json::to_value(info)?));
+        }
+        Command::Streams { page, count } => {
+            let list = fetch::streams(&tools, &page, count)?;
+            sink.emit(Event::result("streams", json!({ "streams": list })));
         }
         Command::Find {
             stream,

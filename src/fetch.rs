@@ -121,6 +121,96 @@ pub fn parse_info(json: &str) -> Result<StreamInfo> {
     })
 }
 
+/// The channel whose streams the app lists by default.
+pub const CHANNEL_STREAMS: &str = "https://www.youtube.com/@CelebrationGlobalTV/streams";
+
+/// One entry in a channel's list of streams.
+#[derive(Debug, Clone, Serialize)]
+pub struct StreamEntry {
+    pub id: String,
+    pub title: String,
+    pub url: String,
+    pub duration: Option<f64>,
+    /// "was_live", "is_live", "is_upcoming", ...
+    pub live_status: Option<String>,
+    /// YYYYMMDD, when YouTube lists it.
+    pub upload_date: Option<String>,
+}
+
+/// The newest `count` streams on a channel's streams page, newest first,
+/// without downloading anything.
+pub fn streams(tools: &Tools, page: &str, count: usize) -> Result<Vec<StreamEntry>> {
+    let mut args = common_args(tools);
+    args.extend(
+        [
+            "-J",
+            "--flat-playlist",
+            "--no-warnings",
+            "--playlist-end",
+            &count.to_string(),
+            page,
+        ]
+        .iter()
+        .map(OsString::from),
+    );
+    let out = run::capture(tools.ytdlp()?, &args)?;
+    if !out.ok {
+        bail!(
+            "yt-dlp could not list {page}: {}",
+            run::tail(&out.stderr, 4)
+        );
+    }
+    parse_streams(&out.stdout)
+}
+
+/// Parses `yt-dlp -J --flat-playlist` output.
+pub fn parse_streams(json: &str) -> Result<Vec<StreamEntry>> {
+    let v: Value = serde_json::from_str(json).context("yt-dlp did not print JSON")?;
+    let entries = v["entries"]
+        .as_array()
+        .context("no entries in the playlist")?;
+    Ok(entries
+        .iter()
+        .filter_map(|e| {
+            let id = e["id"].as_str()?.to_string();
+            let date = e["upload_date"].as_str().map(str::to_string).or_else(|| {
+                // Some listings give a Unix time instead of a date.
+                let t = e["release_timestamp"]
+                    .as_i64()
+                    .or_else(|| e["timestamp"].as_i64())?;
+                let days = t.div_euclid(86_400);
+                Some(civil_date(days))
+            });
+            Some(StreamEntry {
+                url: e["url"]
+                    .as_str()
+                    .map(str::to_string)
+                    .unwrap_or_else(|| format!("https://www.youtube.com/watch?v={id}")),
+                title: e["title"].as_str().unwrap_or_default().to_string(),
+                duration: e["duration"].as_f64(),
+                live_status: e["live_status"].as_str().map(str::to_string),
+                upload_date: date,
+                id,
+            })
+        })
+        .collect())
+}
+
+/// YYYYMMDD for a count of days since 1970-01-01 (proleptic Gregorian).
+fn civil_date(days: i64) -> String {
+    // Howard Hinnant's days-to-civil algorithm.
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z - era * 146_097;
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = doy - (153 * mp + 2) / 5 + 1;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 };
+    let y = yoe + era * 400 + i64::from(m <= 2);
+    format!("{y:04}{m:02}{d:02}")
+}
+
 /// One update from yt-dlp's progress template.
 #[derive(Debug, Clone, PartialEq)]
 pub struct Progress {
@@ -317,6 +407,20 @@ mod tests {
         assert!(p.finished);
         assert_eq!(p.fraction, Some(1.0));
         assert!(parse_progress("[download] 10%").is_none());
+    }
+
+    #[test]
+    fn streams_from_a_flat_playlist() {
+        let json = r#"{"entries":[
+            {"id":"02BqHem35TM","title":"FOR SUCH A TIME | 1ST SERVICE","url":"https://www.youtube.com/watch?v=02BqHem35TM","duration":11504,"live_status":"was_live","release_timestamp":1792303200},
+            {"id":"iz0PPVUleUw","title":"YOUR MOUNTAIN","duration":10391.0,"upload_date":"20261011"},
+            {"title":"no id"}]}"#;
+        let s = parse_streams(json).unwrap();
+        assert_eq!(s.len(), 2);
+        assert_eq!(s[0].upload_date.as_deref(), Some("20261018"));
+        assert_eq!(s[1].url, "https://www.youtube.com/watch?v=iz0PPVUleUw");
+        assert_eq!(s[1].upload_date.as_deref(), Some("20261011"));
+        assert_eq!(civil_date(0), "19700101");
     }
 
     #[test]
