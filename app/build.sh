@@ -30,6 +30,13 @@ echo "== engine"
 (cd "$ROOT" && cargo build --release >> "$FULL" 2>&1) || { echo "engine build failed:"; grep -E "^error" -A6 "$FULL" | head -60; exit 1; }
 echo "ok"
 
+# A timing request: time the export's ffmpeg command instead of building the app.
+if [ -e "$ROOT/.bench" ]; then
+  rm -f "$ROOT/.bench"
+  bash "$ROOT/app/bench.sh"
+  exit $?
+fi
+
 echo "== app"
 if ! (cd "$ROOT/app" && swift build -c release >> "$FULL" 2>&1); then
   echo "app build failed:"

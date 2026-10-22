@@ -201,6 +201,9 @@ enum Command {
         /// Seconds of a preview.
         #[arg(long, default_value_t = 20.0)]
         preview_len: f64,
+        /// Print the ffmpeg arguments instead of rendering (for timing tests).
+        #[arg(long, hide = true)]
+        print_ffmpeg: bool,
     },
 
     /// Check an exported file: format, length, banner at both ends, quiet first and last moments.
@@ -479,6 +482,7 @@ fn run(cli: Cli, sink: &dyn Sink) -> Result<()> {
             overwrite,
             preview,
             preview_len,
+            print_ffmpeg,
         } => {
             let mut timings = Timings {
                 open_hold,
@@ -516,6 +520,16 @@ fn run(cli: Cli, sink: &dyn Sink) -> Result<()> {
                 height: size.1,
                 overwrite,
             };
+            if print_ffmpeg {
+                let plan = render::plan(&tools, &req)?;
+                let args: Vec<String> = plan
+                    .ffmpeg_args(&req.output)
+                    .iter()
+                    .map(|a| a.to_string_lossy().into_owned())
+                    .collect();
+                sink.emit(Event::result("ffmpeg", json!({ "args": args })));
+                return Ok(());
+            }
             let outcome = render::render(&tools, &req, sink)?;
             sink.emit(Event::result(render::STEP, serde_json::to_value(&outcome)?));
             if !no_verify {
