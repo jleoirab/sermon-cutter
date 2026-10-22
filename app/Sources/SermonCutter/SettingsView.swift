@@ -47,12 +47,24 @@ struct SettingsView: View {
     }
 
     private func folderRow(_ label: String, url: URL, set: @escaping (URL) -> Void) -> some View {
-        LabeledContent(label) {
+        FolderRow(label: label, url: url, set: set)
+    }
+}
+
+/// A folder as an editable path, with a Change… button for the usual picker.
+struct FolderRow: View {
+    let label: String
+    let url: URL
+    let set: (URL) -> Void
+    @State private var text = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 4) {
+            Text(label)
             HStack {
-                Text(url.path.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~"))
-                    .font(.caption)
-                    .lineLimit(1)
-                    .truncationMode(.middle)
+                TextField("Folder", text: $text)
+                    .onSubmit(commit)
+                    .font(.callout)
                 Button("Change…") {
                     let panel = NSOpenPanel()
                     panel.canChooseDirectories = true
@@ -63,5 +75,17 @@ struct SettingsView: View {
                 }
             }
         }
+        .onAppear { text = FolderRow.tilde(url.path) }
+        .onChange(of: url) { _, u in text = FolderRow.tilde(u.path) }
+    }
+
+    private func commit() {
+        let path = (text as NSString).expandingTildeInPath
+        guard !path.isEmpty else { return }
+        set(URL(fileURLWithPath: path, isDirectory: true))
+    }
+
+    static func tilde(_ path: String) -> String {
+        path.replacingOccurrences(of: FileManager.default.homeDirectoryForCurrentUser.path, with: "~")
     }
 }
