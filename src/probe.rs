@@ -59,6 +59,52 @@ pub fn probe(ffprobe: &Path, file: &Path) -> Result<MediaInfo> {
     parse(&out.stdout).with_context(|| format!("unexpected ffprobe output for {}", file.display()))
 }
 
+/// Timestamp and duration (seconds) of every audio packet from `a` to `b`.
+pub fn audio_packets(ffprobe: &Path, file: &Path, a: f64, b: f64) -> Result<Vec<(f64, f64)>> {
+    let range = format!("{}%{}", crate::num(a.max(0.0)), crate::num(b));
+    let mut args: Vec<std::ffi::OsString> = [
+        "-v",
+        "error",
+        "-select_streams",
+        "a:0",
+        "-read_intervals",
+        range.as_str(),
+        "-show_entries",
+        "packet=pts_time,duration_time",
+        "-of",
+        "csv=p=0",
+    ]
+    .iter()
+    .map(std::ffi::OsString::from)
+    .collect();
+    args.push(file.as_os_str().to_owned());
+    let out = run::capture(ffprobe, args)?;
+    if !out.ok {
+        bail!(
+            "ffprobe could not read the audio packets of {}: {}",
+            file.display(),
+            run::tail(&out.stderr, 3)
+        );
+    }
+    Ok(parse_packets(&out.stdout))
+}
+
+/// Parses `pts_time,duration_time` lines, skipping any without a time, in
+/// time order.
+pub fn parse_packets(csv: &str) -> Vec<(f64, f64)> {
+    let mut v: Vec<(f64, f64)> = csv
+        .lines()
+        .filter_map(|l| {
+            let mut it = l.trim().trim_end_matches(',').split(',');
+            let t: f64 = it.next()?.parse().ok()?;
+            let d: f64 = it.next().and_then(|d| d.parse().ok()).unwrap_or(0.0);
+            Some((t, d))
+        })
+        .collect();
+    v.sort_by(|x, y| x.0.total_cmp(&y.0));
+    v
+}
+
 /// Parses `ffprobe -print_format json -show_format -show_streams` output.
 pub fn parse(json: &str) -> Result<MediaInfo> {
     let v: Value = serde_json::from_str(json)?;
@@ -120,6 +166,13 @@ pub fn parse_rate(s: &str) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn packets_in_order_without_blanks() {
+        let p =
+            parse_packets("0.046440,0.023220\n0.000000,0.023220,\nN/A,0.023220\n0.023220,N/A\n");
+        assert_eq!(p, [(0.0, 0.02322), (0.02322, 0.0), (0.04644, 0.02322)]);
+    }
 
     #[test]
     fn rates() {

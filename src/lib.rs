@@ -16,6 +16,7 @@ pub mod encoders;
 pub mod events;
 pub mod fetch;
 pub mod probe;
+pub mod quality;
 pub mod render;
 pub mod run;
 pub mod timecode;
@@ -23,6 +24,7 @@ pub mod timings;
 pub mod tools;
 pub mod transcribe;
 pub mod verify;
+pub mod vscan;
 
 /// Formats seconds for an ffmpeg option or filter argument: up to three decimals,
 /// trailing zeros trimmed ("8", "8.5", "33.125").

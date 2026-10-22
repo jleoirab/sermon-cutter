@@ -10,6 +10,7 @@ use serde_json::json;
 use sermoncut::audio::{self, Features};
 use sermoncut::events::{Event, Sink, StdoutSink};
 use sermoncut::fetch::{self, Part};
+use sermoncut::quality::{self, VideoSource};
 use sermoncut::render::{self, RenderRequest};
 use sermoncut::timings::Timings;
 use sermoncut::tools::Tools;
@@ -73,6 +74,31 @@ enum Command {
         /// Hear every window to the end instead of stopping at the cue (for scoring).
         #[arg(long, hide = true)]
         hear_all: bool,
+    },
+
+    /// Check the sound and picture of the cut and grade the stream.
+    Check {
+        /// The downloaded stream: its audio file, or the video file.
+        stream: PathBuf,
+        /// The downloaded video, to check the picture too (default: `stream`
+        /// itself when it has a picture).
+        #[arg(long)]
+        video: Option<PathBuf>,
+        /// Where the cut starts, e.g. 1:11:36.
+        #[arg(long = "in", value_parser = timecode::parse_arg)]
+        cut_in: f64,
+        /// Where the cut ends, e.g. 2:29:19.
+        #[arg(long = "out", value_parser = timecode::parse_arg)]
+        cut_out: f64,
+        /// Sound measurements, shared with find.
+        #[arg(long)]
+        cache: Option<PathBuf>,
+        /// Save the picture measurements here, and reuse them next time.
+        #[arg(long)]
+        picture_cache: Option<PathBuf>,
+        /// Check the sound only.
+        #[arg(long)]
+        no_video: bool,
     },
 
     /// Find where a finished cut sits in its stream by matching their sound.
@@ -225,6 +251,7 @@ fn step_name(c: &Command) -> &'static str {
         Command::Info { .. } => "info",
         Command::Find { .. } => "find",
         Command::Align { .. } => "align",
+        Command::Check { .. } => quality::STEP,
         Command::Fetch { .. } => "fetch",
         Command::Render { .. } => render::STEP,
         Command::Verify { .. } => verify::STEP,
@@ -340,6 +367,34 @@ fn run(cli: Cli, sink: &dyn Sink) -> Result<()> {
                     "runs": s.runs,
                 }),
             ));
+        }
+        Command::Check {
+            stream,
+            video,
+            cut_in,
+            cut_out,
+            cache,
+            picture_cache,
+            no_video,
+        } => {
+            let f = measurements(&tools, &stream, cache.as_deref(), "check_listen", sink)?;
+            let video = match (no_video, video) {
+                (true, _) => None,
+                (false, Some(v)) => Some(v),
+                (false, None) => probe::probe(tools.ffprobe()?, &stream)?
+                    .video
+                    .is_some()
+                    .then(|| stream.clone()),
+            };
+            let source = video.as_deref().map(|file| VideoSource {
+                file,
+                cache: picture_cache.as_deref(),
+            });
+            let report = quality::check(&tools, &f, &stream, source, cut_in, cut_out, sink)?;
+            let mut v = serde_json::to_value(&report)?;
+            v["in_tc"] = json!(timecode::format(cut_in));
+            v["out_tc"] = json!(timecode::format(cut_out));
+            sink.emit(Event::result(quality::STEP, v));
         }
         Command::Align {
             stream,

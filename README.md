@@ -4,12 +4,13 @@
 
 1. It downloads a stream from YouTube, audio first and then H.264 video.
 2. It finds where the sermon starts and ends, from the sound and the words, with no chapters needed.
-3. It cuts the sermon and lays the Sunday banner over both ends, with dissolves and audio fades.
-4. It checks the exported file before anyone uploads it.
+3. It checks the stream's sound and picture over the sermon and grades it Good, Usable but tell the leads, or Not usable.
+4. It cuts the sermon and lays the Sunday banner over both ends, with dissolves and audio fades.
+5. It checks the exported file before anyone uploads it.
 
 It runs the same on macOS and Windows. The Mac app, and a Windows app later, drive it as a command-line tool and read its progress as JSON.
 
-This is milestones 1 and 2 of the [Sermon Cutter PRD & Design Plan](https://claude.ai/code/artifact/159c19aa-033f-42a7-ac98-4f42af1fc993). The quality check and the app itself come in later milestones.
+This is milestones 1 to 3 of the [Sermon Cutter PRD & Design Plan](https://claude.ai/code/artifact/159c19aa-033f-42a7-ac98-4f42af1fc993). The Mac app comes next.
 
 ## Try it on a Mac
 
@@ -35,6 +36,10 @@ $B find ~/Movies/SermonCutter/iz0PPVUleUw.audio.m4a --lead-in 6:00 \
   --cache ~/Movies/SermonCutter/iz0PPVUleUw.sound.json \
   --transcript-cache ~/Movies/SermonCutter/iz0PPVUleUw.words.json
 
+# Check the stream over that cut: prints "headline", the problems and a note for the leads.
+$B check ~/Movies/SermonCutter/iz0PPVUleUw.video.mp4 --in 1:11:36 --out 2:29:21.6 \
+  --cache ~/Movies/SermonCutter/iz0PPVUleUw.sound.json
+
 # Render with the In and Out that find printed.
 $B render \
   --source ~/Movies/SermonCutter/iz0PPVUleUw.video.mp4 \
@@ -56,6 +61,7 @@ $B render \
 | `info <url>` | Reads the title, length, live status and best H.264 rendition, without downloading |
 | `fetch <url> [--dir D] [--part audio\|video\|both]` | Downloads the AAC audio, then H.264 video up to 1080p merged to MP4 |
 | `find <stream> [--lead-in 2:00]` | Proposes In and Out, each with a confidence, plus a map of music and speech for the timeline |
+| `check <stream> --in --out [--video V] [--no-video]` | Grades the cut's sound and picture, lists each problem with its time in the sermon, and drafts a note for the leads |
 | `align --stream --final` | Finds where a finished cut sits in its stream by matching their sound (for scoring `find` on past Sundays) |
 | `render --source --banner --in --out -o` | Cuts, adds the banner and fades, exports 1080p H.264 + AAC, then self-checks |
 | `verify --file [--banner] [--expect-duration]` | Checks format, length, banner on the first and last frames, footage mid-cut, and quiet first and last 100 ms |
@@ -118,6 +124,30 @@ It listens first, then reads.
 
 whisper runs with `-mc 0` so it can't prompt itself with its own last words. Without it, whisper looped "I set you free" fifty times on Sept 20 and lost the cue.
 
+## How check works
+
+It scans only the cut, from In to Out.
+
+| Problem | How it's found | Counts when |
+| --- | --- | --- |
+| No sound | Loudness under −90 dBFS: digital silence from a dropped feed. The quietest second on the good Sundays was −69 | 1 s or more |
+| Microphone lost | 25 dB under the surrounding 5 minutes, without a break | 20 s or more |
+| Gap in the audio data | Audio timestamps jump | over 0.25 s |
+| Frozen picture | Frames identical (mean change under 0.1 grey levels at 160 x 90) | 2 s or more |
+| Black picture | Mean grey under 10 of 255 | 1 s or more |
+| Holding screen | The picture repeats itself every 4 to 60 s but changes in between: a looping animation, not a still shot | 30 s windows |
+| Choppy picture | More than 10 holds of 3 or more repeated frames in a minute | that minute |
+
+The verdict:
+
+- **Not usable: use a different stream** when the sound, or the picture of the service, is lost for 5% of the cut, for more than 3 minutes at once, or 3 times for more than 30 s.
+- **Usable, but tell the leads** when any sound problem lasts 3 s or more, or the picture has trouble for 30 s or more in all.
+- **Good** otherwise.
+
+`note` is a message for the leads with each problem's time into the sermon. `minutes` marks every minute of the cut good, warn or bad for the Review screen's quality strip.
+
+The picture scan decodes the video once at 160 x 90 grey and keeps only a few numbers per frame and a 32 x 18 thumbnail a second. It starts a minute before In, because the loop check looks back that far. `--picture-cache` saves those measurements.
+
 ## How the render works
 
 ffmpeg makes one pass, using a hardware H.264 encoder when there is one: VideoToolbox on the Mac, NVENC, QuickSync or AMF on Windows, and x264 as the fallback.
@@ -132,7 +162,7 @@ ffmpeg makes one pass, using a hardware H.264 encoder when there is one: VideoTo
 cargo test
 ```
 
-The suite has 62 tests. The end-to-end tests need ffmpeg with libx264, and the download test needs yt-dlp and python3; any test whose tools are missing is skipped.
+The suite has 74 tests. The end-to-end tests need ffmpeg with libx264, and the download test needs yt-dlp and python3; any test whose tools are missing is skipped.
 
 | Test | What it proves |
 | --- | --- |
@@ -145,6 +175,7 @@ The suite has 62 tests. The end-to-end tests need ffmpeg with libx264, and the d
 | Made-up services | The start is found after worship; a 3.5-minute song or a dropout inside the sermon doesn't end it; a concert has no sermon |
 | Seat cues | Words as heard on Sept 13, Sept 20, Oct 4 and Oct 11 give the right Out; a mid-sermon "sit down" is passed over |
 | Alignment | A cut found in its stream to 0.1 s; a cut from another stream is refused |
+| Stream check | A synthetic stream with a 4 s freeze, 2 s of black and 10 s without sound gets all three found and "tell the leads"; a looping animation is a holding screen but a still shot isn't |
 
 ### Checked so far
 
@@ -168,3 +199,11 @@ On Oct 4 the preacher never said to sit. Someone else thanked him and started th
 Your lead-ins ranged from 1.4 to 7.2 minutes, so the lead-in stays your call each week. A transcript of the minute around each found start confirms the speaker taking over from the worship team there.
 
 The listening covered 50 to 80 minutes of each stream. On the 2022 MacBook Pro, `find` on Oct 11 took 1 min 40 s in all, including measuring the sound and transcribing 50 minutes on the GPU. It put Out at 2:29:19.2, 1.3 s before the real cut; whisper's word times differ by a second or so between computers.
+
+**Stream check on past Sundays.** `check` ran over each real cut (Oct 18: the found cut). The sound was checked on all six. The picture was checked on Oct 11 and Oct 18, whose videos are on the MacBook, using measurements taken there.
+
+| Sunday | Verdict | What it found |
+| --- | --- | --- |
+| Sept 13, 20, 27, Oct 4 | Good | Nothing (sound) |
+| Oct 11 | Good | Nothing (sound and picture) |
+| Oct 18 | Not usable | Sound lost 11 times, 16 min 31 s in all (21%), the longest 8 min 17 s; the holding screen for 12 min 44 s, from 2:01:30 to 2:14:55; 3 choppy minutes; 4 one-second black flashes |

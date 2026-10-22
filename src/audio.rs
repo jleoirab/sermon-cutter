@@ -21,8 +21,9 @@ pub const SR: usize = 16_000;
 pub const ENV_RATE: usize = 10;
 /// Anything quieter than this (dBFS) over a whole second counts as silence.
 pub const SILENT_DB: f32 = -50.0;
-/// Stream audio that drops out is digital silence, far below room tone.
-pub const DEAD_AIR_DB: f32 = -60.0;
+/// Stream audio that drops out is digital silence, far below room tone: the
+/// quietest second on the good Sundays was -69 dBFS, Oct 18's dropouts -180.
+pub const DEAD_AIR_DB: f32 = -90.0;
 
 /// Per-second measurements of a stream's audio.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
