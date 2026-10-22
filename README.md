@@ -23,9 +23,12 @@ It needs the Xcode Command Line Tools (Swift 5.9 or later), Rust, and for now th
 - **Streams** lists the channel's newest streams; pick one or paste a link. Sundays already started are listed below to pick up where they left off.
 - **Preparing** downloads the audio, finds the sermon and checks the sound while the video downloads, then checks the picture. Everything is cached next to the downloads, so reopening a Sunday is instant.
 - **Review** has the player and the timeline on the left: music and speech bands, the cut, the quality strip, and loudness when zoomed to 10 minutes or 1 minute. Drag In or Out (the player follows), or click to play from anywhere. On the right are In and Out with their confidence and evidence, nudges, Set to playhead and typed times; the lead-in; the verdict, each problem (click to listen) and Copy the note for the leads; the banner (dropped, chosen, from a Drive link shared with anyone, or found already in the Sunday's Service folder); the holds and fades with 20-second previews of each end.
+- **Ends** sits under the timeline: the first and last 20 seconds of the cut, with the banner and the sound drawn as lanes. Drag a dot to change a hold, the dissolve or a fade; the numbers in the inspector follow.
 - **Export** writes Service/<date>/<date> Sermon.mp4 (for example "Oct 11th 2026/Oct 11th Sermon.mp4"), self-checks it, and offers Show in Finder.
 
-Still to come before the pilot: tools bundled with the app (no Homebrew), dragging the banner and fade edges on the timeline, Drive upload, and signing.
+Still to come before the pilot: tools bundled with the app (no Homebrew), Drive upload, and signing.
+
+macOS asks once for access to Documents (where the Service folder lives). Builds are signed ad hoc, so each rebuild looks like a new app and asks again. To keep the answer across rebuilds, make a self-signed code-signing certificate named "Sermon Cutter Dev" in Keychain Access (Certificate Assistant → Create a Certificate…, type Code Signing); `build.sh` signs with it when it's there.
 
 ## Try it on a Mac
 

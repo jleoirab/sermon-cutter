@@ -302,6 +302,7 @@ struct BannerSection: View {
                 TextField("or paste a Google Drive link", text: $link)
                     .textFieldStyle(.roundedBorder)
                     .onSubmit(fetch)
+                    .onChange(of: link) { linkError = nil }
                 if fetching {
                     ProgressView().controlSize(.small)
                 } else {
@@ -317,8 +318,8 @@ struct BannerSection: View {
             // Documents waits for macOS to ask for permission.
             thumbnail = nil
             guard let path = model.sunday.bannerPath else { return }
-            let image = await Task.detached(priority: .userInitiated) { NSImage(contentsOfFile: path) }.value
-            if !Task.isCancelled { thumbnail = image }
+            let data = await Task.detached(priority: .userInitiated) { FileManager.default.contents(atPath: path) }.value
+            if !Task.isCancelled, let data { thumbnail = NSImage(data: data) }
         }
         .fileImporter(isPresented: $choosing, allowedContentTypes: [.png, .jpeg, .webP, .image]) { result in
             if case .success(let url) = result { model.setBanner(url) }
