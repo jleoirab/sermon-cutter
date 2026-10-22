@@ -13,7 +13,7 @@ use sermoncut::fetch::{self, Part};
 use sermoncut::render::{self, RenderRequest};
 use sermoncut::timings::Timings;
 use sermoncut::tools::Tools;
-use sermoncut::transcribe::{Spot, Transcriber, Transcript};
+use sermoncut::transcribe::{Transcriber, Transcript};
 use sermoncut::verify::{self, Expect};
 use sermoncut::{align, analysis, cues, encoders, parse_bitrate, probe, timecode};
 use std::path::PathBuf;
@@ -315,26 +315,7 @@ fn run(cli: Cli, sink: &dyn Sink) -> Result<()> {
                 .filter(|w| heard_until.is_none_or(|h| w.start < h))
                 .cloned()
                 .collect();
-            let mut out = cues::decide(&words, not_before, fallback);
-            if let (Some(ear), Some(cue)) = (&ear, &out.cue) {
-                let (a, len) = cues::retime_window(cue);
-                let spot = match t.spot(a, len) {
-                    Some(w) => w.to_vec(),
-                    None => {
-                        let w = ear.window(&stream, a, len)?;
-                        t.spots.push(Spot {
-                            start: a,
-                            len,
-                            words: w.clone(),
-                        });
-                        if let Some(c) = &transcript_cache {
-                            t.save(c)?;
-                        }
-                        w
-                    }
-                };
-                cues::retime(&mut out, &spot);
-            }
+            let out = cues::decide(&words, not_before, fallback);
             sink.emit(Event::result(
                 "find",
                 json!({
@@ -349,7 +330,6 @@ fn run(cli: Cli, sink: &dyn Sink) -> Result<()> {
                     "out_confidence": out.confidence,
                     "out_method": out.method,
                     "out_cue": out.cue,
-                    "out_retimed_by": out.retimed_by,
                     "cues": out.cues,
                     "speech_run_ends": s.speech_run_ends,
                     "speech_run_ends_tc": timecode::format(s.speech_run_ends as f64),

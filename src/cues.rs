@@ -312,37 +312,6 @@ pub fn listen_for_out(
     }
 }
 
-/// whisper.cpp's word times can drift by a few seconds deep into a 10-minute
-/// window, so the chosen cue is heard again on its own, from this many
-/// seconds before it, for `RETIME_LEN` seconds.
-pub const RETIME_BEFORE: f64 = 45.0;
-pub const RETIME_LEN: f64 = 90.0;
-
-/// The window to hear again for `cue`.
-pub fn retime_window(cue: &Cue) -> (f64, f64) {
-    ((cue.at - RETIME_BEFORE).max(0.0), RETIME_LEN)
-}
-
-/// Re-times a seat-cue Out from the words of its retime window: the cue
-/// heard there nearest the original (within 10 s) gives the Out. Leaves `f`
-/// as it was when the cue isn't heard again or the Out isn't a seat cue.
-pub fn retime(f: &mut OutFinding, words: &[Word]) {
-    if f.method != "seat_cue" {
-        return;
-    }
-    let Some(cue) = &mut f.cue else { return };
-    let again = find_cues(words)
-        .into_iter()
-        .filter(|c| (c.at - cue.at).abs() <= 10.0)
-        .min_by(|a, b| (a.at - cue.at).abs().total_cmp(&(b.at - cue.at).abs()));
-    if let Some(c) = again {
-        f.retimed_by = Some(c.out - cue.out);
-        cue.at = c.at;
-        cue.out = c.out;
-        f.out = c.out;
-    }
-}
-
 #[derive(Debug, Clone, Serialize)]
 pub struct OutFinding {
     /// Seconds into the stream.
@@ -355,8 +324,6 @@ pub struct OutFinding {
     pub cue: Option<Cue>,
     /// Every seat cue heard after `not_before`, for the Review screen.
     pub cues: Vec<Cue>,
-    /// How far (seconds) hearing the cue again on its own moved the Out.
-    pub retimed_by: Option<f64>,
 }
 
 /// Decides the Out from the words heard: the seat cue that leads into the
@@ -374,7 +341,6 @@ pub fn decide(words: &[Word], not_before: f64, fallback: f64) -> OutFinding {
         method,
         cue,
         cues: cues.clone(),
-        retimed_by: None,
     };
     if let Some((c, confidence)) = choose(&cues, not_before) {
         if let Some(out) = handover_before(words, &c) {
@@ -478,10 +444,6 @@ mod tests {
             "{}",
             d.out
         );
-        // Re-timing leaves a prayer-close Out alone.
-        let mut e = d.clone();
-        retime(&mut e, &joined(&[(8575.0, "Can we be seated please?")]));
-        assert_eq!(e.out, d.out);
     }
 
     #[test]
@@ -570,33 +532,6 @@ mod tests {
         )
         .unwrap();
         assert_eq!(again, 0);
-    }
-
-    #[test]
-    fn retiming_moves_the_out_to_the_short_window() {
-        let long = joined(&[
-            (
-                8946.0,
-                "In Jesus name we have prayed. Amen. God bless you, please be seated.",
-            ),
-            (8970.0, "Fill that link."),
-        ]);
-        let mut f = decide(&long, 0.0, 9500.0);
-        let (from, len) = retime_window(f.cue.as_ref().unwrap());
-        assert_eq!((from, len), (f.cue.as_ref().unwrap().at - 45.0, 90.0));
-        // Heard alone, the same words land 3 s later.
-        let short = joined(&[(
-            8949.0,
-            "In Jesus name we have prayed. Amen. God bless you, please be seated.",
-        )]);
-        let before = f.out;
-        retime(&mut f, &short);
-        assert!((f.out - before - 3.0).abs() < 1e-9);
-        assert!((f.retimed_by.unwrap() - 3.0).abs() < 1e-9);
-        // Not heard again: unchanged.
-        let mut g = decide(&long, 0.0, 9500.0);
-        retime(&mut g, &joined(&[(8949.0, "music")]));
-        assert_eq!((g.out, g.retimed_by), (before, None));
     }
 
     #[test]

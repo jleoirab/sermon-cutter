@@ -39,7 +39,7 @@ $B find ~/Movies/SermonCutter/iz0PPVUleUw.audio.m4a --lead-in 6:00 \
 $B render \
   --source ~/Movies/SermonCutter/iz0PPVUleUw.video.mp4 \
   --banner "$HOME/Documents/CCIKW/Service/Oct 11th 2026/YOUR-MOUNTAIN-16BY9.webp" \
-  --in 1:11:38 --out 2:29:21.5 \
+  --in 1:11:36 --out 2:29:21.6 \
   -o "$HOME/Movies/SermonCutter/Oct 11 test.mp4"
 ```
 
@@ -100,6 +100,24 @@ The speech model comes from `SERMONCUT_WHISPER_MODEL`, `--model`, or the tools f
 
 The tools folder sits outside the signed app so yt-dlp can keep itself up to date. YouTube downloads need a JavaScript runtime, and Deno is yt-dlp's recommended one.
 
+## How find works
+
+It listens first, then reads.
+
+1. **The preacher's start, from the sound.** Each second gets two measures: the share of its energy below 150 Hz, and how much its level swings between 20 ms slices. A band or held notes mean music. One voice with no bass and big syllable swings means speech. The sermon starts where at least 40% of the previous 5 minutes was music and at least half of the next 2 minutes is speech. Among those moments, the one followed by the most speech before the next 4.5 minutes of music wins. Short songs inside the sermon don't end it.
+2. **In** is that start minus `--lead-in`, moved to the quietest second within 3 s.
+3. **Out, from the words.** whisper.cpp transcribes from 25 minutes after the preacher starts, 10 minutes at a time. It stops at the first "please be seated" (or "take your seats") that leads into the offering, or that follows a prayer and leads somewhere new. Out is the end of that phrase, kept through a short "Thank you, Jesus" straight after it.
+4. **Hand-over.** If someone thanks the apostle or pastor between the closing prayer and that cue, the preacher's part ended at the prayer, so Out moves there.
+5. **Fallbacks.** With no cue, Out is the closing prayer before the offering. With no words at all, Out is the end of the sermon's run of speech.
+
+| Out confidence | When |
+| --- | --- |
+| high | The cue follows a prayer and the offering is named within 2.5 minutes after it |
+| medium | Only one of those, or a hand-over |
+| low | No seat cue was heard |
+
+whisper runs with `-mc 0` so it can't prompt itself with its own last words. Without it, whisper looped "I set you free" fifty times on Sept 20 and lost the cue.
+
 ## How the render works
 
 ffmpeg makes one pass, using a hardware H.264 encoder when there is one: VideoToolbox on the Mac, NVENC, QuickSync or AMF on Windows, and x264 as the fallback.
@@ -114,7 +132,7 @@ ffmpeg makes one pass, using a hardware H.264 encoder when there is one: VideoTo
 cargo test
 ```
 
-The suite has 40 tests. The end-to-end tests need ffmpeg with libx264, and the download test needs yt-dlp and python3; any test whose tools are missing is skipped.
+The suite has 62 tests. The end-to-end tests need ffmpeg with libx264, and the download test needs yt-dlp and python3; any test whose tools are missing is skipped.
 
 | Test | What it proves |
 | --- | --- |
@@ -124,11 +142,29 @@ The suite has 40 tests. The end-to-end tests need ffmpeg with libx264, and the d
 | Bad requests | Out past the end, Out before In, and holds too long for the cut are all refused |
 | Late audio | Sound stays in sync when a stream's audio starts after its video |
 | Local download | The real yt-dlp downloads a file from a local web server, reporting progress and where it saved the file |
+| Made-up services | The start is found after worship; a 3.5-minute song or a dropout inside the sermon doesn't end it; a concert has no sermon |
+| Seat cues | Words as heard on Sept 13, Sept 20, Oct 4 and Oct 11 give the right Out; a mid-sermon "sit down" is passed over |
+| Alignment | A cut found in its stream to 0.1 s; a cut from another stream is refused |
 
 ### Checked so far
 
 - **Real footage and banner.** The engine's ffmpeg command ran on 60 s of the Oct 11 final cut, with `YOUR-MOUNTAIN-16BY9.webp` as the banner, using ffmpeg 4.4 and x264. Against the banner, the opening and closing frames scored SSIM 0.999 and the middle scored 0.14. The first and last 100 ms measured −55.6 and −53.7 dBFS.
-- **YouTube download.** Not run yet: YouTube was unreachable from the build environment.
-- **VideoToolbox speed.** Not measured yet. On a Linux VM, x264 managed about 1.7× real time at 1080p, which is why a Mac hardware encoder matters.
+- **YouTube download.** The Oct 11 stream downloaded on the 2022 MacBook Pro, audio first, then 1080p H.264 video.
+- **VideoToolbox speed.** On the same Mac, a 73:55 cut exported in 11:08 (6.6× real time) and passed every self-check. The file was 3.4 GB, against 8.8 GB from CapCut.
 
-Both of these are milestone 1's gate, to run on the 2022 MacBook Pro.
+**Sermon finder on past Sundays.** `align` recovered each real cut's In and Out from its stream. `find` then ran on each stream with no chapters:
+
+| Sunday | Preacher starts | Your In was | Out found | Off by | Confidence |
+| --- | --- | --- | --- | --- | --- |
+| Sept 13 | 0:49:00 | 2.9 min before | 2:04:10.4 | −0.3 s | high |
+| Sept 20 | 1:14:44 | 7.2 min before | 2:56:59.9 | +0.5 s | high |
+| Sept 27 | 1:33:24 | 1.4 min before | 2:53:12.2 | −0.8 s | high |
+| Oct 4 | 1:12:17 | 3.2 min before | 2:22:18.7 | +11.2 s | medium |
+| Oct 11 | 1:17:38 | 6.3 min before | 2:29:21.6 | +1.1 s | medium |
+| Oct 18 | 1:28:14 | (not cut) | 2:46:02.6 | | high |
+
+On Oct 4 the preacher never said to sit. Someone else thanked him and started the giving, and your cut ended 10 s before the end of his closing prayer.
+
+Your lead-ins ranged from 1.4 to 7.2 minutes, so the lead-in stays your call each week. A transcript of the minute around each found start confirms the speaker taking over from the worship team there.
+
+The listening covered 50 to 80 minutes of each stream, at about 5× real time on 2 cloud CPU cores. The Mac's GPU should be much faster; that's the next thing to measure.

@@ -25,17 +25,6 @@ pub struct Word {
 pub struct Transcript {
     pub covered: Vec<(f64, f64)>,
     pub words: Vec<Word>,
-    /// Short stretches heard again on their own to time a cue closely, kept
-    /// apart from `words` because their times differ slightly.
-    #[serde(default)]
-    pub spots: Vec<Spot>,
-}
-
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Spot {
-    pub start: f64,
-    pub len: f64,
-    pub words: Vec<Word>,
 }
 
 impl Transcript {
@@ -71,14 +60,6 @@ impl Transcript {
         );
         self.words.sort_by(|x, y| x.start.total_cmp(&y.start));
         self.covered.push((a, b));
-    }
-
-    /// The words of a short stretch heard on its own, if it has been.
-    pub fn spot(&self, start: f64, len: f64) -> Option<&[Word]> {
-        self.spots
-            .iter()
-            .find(|s| (s.start - start).abs() < 0.05 && (s.len - len).abs() < 0.05)
-            .map(|s| s.words.as_slice())
     }
 }
 
