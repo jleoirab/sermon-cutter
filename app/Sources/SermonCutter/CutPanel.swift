@@ -3,13 +3,13 @@ import SwiftUI
 import UniformTypeIdentifiers
 import SermonCutterCore
 
-/// Step 1, on the right: Start, End and the banner. Before the sermon is
-/// found it shows the Sunday getting ready instead.
+/// Step 1, on the right: Start, End and the banner. Until every
+/// getting-ready step is done it shows those steps instead.
 struct CutPanel: View {
     @ObservedObject var model: SundayModel
 
     var body: some View {
-        if model.found {
+        if model.isReady {
             VStack(alignment: .leading, spacing: 14) {
                 Text("Check the cut and the banner").font(Brand.lato(18, .black))
                 ScrollView {
@@ -48,7 +48,7 @@ struct PreparingPanel: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
             Text("Getting the Sunday ready").font(Brand.lato(18, .black))
-            Text("This takes a few minutes. The sermon is found while the video downloads, and you can start checking it before the download is done.")
+            Text("This takes a few minutes. You can listen in the meantime. The cut opens once every step below is done.")
                 .font(Brand.lato(13))
                 .foregroundStyle(Brand.text2)
                 .fixedSize(horizontal: false, vertical: true)

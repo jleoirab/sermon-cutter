@@ -37,6 +37,10 @@ final class SundayModel: ObservableObject {
         Step(id: "picture", title: "Checking picture quality"),
     ]
     @Published var page: ReviewPage = .cut
+    /// Every getting-ready step has finished once. Until then step 1 shows
+    /// the steps, and Quality and Export stay closed. It stays true after,
+    /// so checking again later doesn't send you back.
+    @Published private(set) var isReady = false
     @Published var playhead: Double = 0
     @Published var isPlaying = false
     @Published var loudness: Loudness?
@@ -165,6 +169,7 @@ final class SundayModel: ObservableObject {
         guard let i = steps.firstIndex(where: { $0.id == id }) else { return }
         steps[i].state = state
         if let detail { steps[i].detail = detail }
+        if !isReady, found, steps.allSatisfy({ $0.state == .done }) { isReady = true }
     }
 
     /// Passes the engine's progress on to the step it belongs to.

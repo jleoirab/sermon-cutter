@@ -102,8 +102,8 @@ struct StepTabs: View {
         SegmentedPills(
             options: [
                 .init(value: ReviewPage.cut, title: "1 · Cut"),
-                .init(value: ReviewPage.quality, title: "2 · Quality", enabled: model.found),
-                .init(value: ReviewPage.export, title: "3 · Export", enabled: model.found),
+                .init(value: ReviewPage.quality, title: "2 · Quality", enabled: model.isReady),
+                .init(value: ReviewPage.export, title: "3 · Export", enabled: model.isReady),
             ],
             selection: Binding(
                 get: { model.page == .done ? .export : model.page },
@@ -118,9 +118,9 @@ struct StatusChip: View {
     @ObservedObject var model: SundayModel
 
     var body: some View {
-        if model.failedStep != nil && !model.found {
+        if model.failedStep != nil && !model.isReady {
             Chip(text: "Couldn't get the Sunday ready", foreground: Brand.badFg, background: Brand.badBg, size: 13)
-        } else if !model.found {
+        } else if !model.isReady {
             working("Getting the Sunday ready")
         } else if model.checking {
             working("Checking the stream")
@@ -195,7 +195,7 @@ struct ExportPill: View {
                     .labelStyle(.titleAndIcon)
             }
             .buttonStyle(PillButtonStyle(kind: .primary, size: .small))
-            .disabled(!model.found)
+            .disabled(!model.isReady)
         }
     }
 }
