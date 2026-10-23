@@ -15,16 +15,21 @@ This is milestones 1 to 3 of the [Sermon Cutter PRD & Design Plan](https://claud
 ## The Mac app
 
 ```bash
-app/build.sh        # builds the engine and the app, installs ~/Applications/Sermon Cutter.app
+app/build.sh        # builds the engine and the app, installs ~/Applications/CCI Sermon Cutter.app
 ```
 
-It needs the Xcode Command Line Tools (Swift 5.9 or later), Rust, and for now the tools from Homebrew (`brew install ffmpeg yt-dlp deno whisper-cpp`) plus the speech model (see Settings).
+It needs the Xcode Command Line Tools (Swift 5.9 or later), Rust, and for now the tools from Homebrew (`brew install ffmpeg yt-dlp deno whisper-cpp`) plus the speech model (see Settings). The app carries its own fonts (Anton and Lato, both under the SIL Open Font License, in `app/Resources/Fonts`) and icon.
 
-- **Streams** lists the channel's newest streams; pick one or paste a link. Sundays already started are listed below to pick up where they left off.
-- **Preparing** downloads the audio, finds the sermon and checks the sound while the video downloads, then checks the picture. Everything is cached next to the downloads, so reopening a Sunday is instant.
-- **Review** has the player and the timeline on the left: music and speech bands, the cut, the quality strip, and loudness when zoomed to 10 minutes or 1 minute. Drag In or Out (the player follows), or click to play from anywhere. On the right are In and Out with their confidence and evidence, nudges, Set to playhead and typed times; the lead-in; the verdict, each problem (click to listen) and Copy the note for the leads; the banner (dropped, chosen, from a Drive link shared with anyone, or found already in the Sunday's Service folder); the holds and fades with 20-second previews of each end.
-- **Ends** sits under the timeline: the first and last 20 seconds of the cut, with the banner and the sound drawn as lanes. Drag a dot to change a hold, the dissolve or a fade; the numbers in the inspector follow.
-- **Export** writes Service/<date>/<date> Sermon.mp4 (for example "Oct 11th 2026/Oct 11th Sermon.mp4"), self-checks it, and offers Show in Finder.
+- **Home** leads with this Sunday's stream (the newest Sunday, its 1st service), with Sundays already started beside it and the channel's other recent streams below. Paste any other stream's link in the toolbar. YouTube's titles are read as the sermon and the service ("Your Mountain", "1st service · Oct 11").
+- **Getting ready** downloads the audio, finds the sermon and checks the sound while the video downloads, then checks the picture; each step shows on the right. Everything is cached next to the downloads, so reopening a Sunday is instant.
+- **Review** is three steps in the same window, the player and timeline on the left and the step on the right:
+  - **1 · Cut**: the whole service as music and speech, with Start and End to drag (the player follows) and quality minute by minute under the cut. On the right: Start and End with how sure they are, nudges and typed times, how much worship is kept, the words heard at the end with "please be seated" highlighted (click a word to end there), and the banner (dropped, chosen, from a Drive link shared with anyone, or found already in the Sunday's Service folder).
+  - **Preview the ends** plays the first or last 20 seconds with the banner and fades worked out as it plays; drag a dot on the tracks to change a hold, the dissolve or a fade and it plays again from just before it.
+  - **2 · Quality**: the verdict, minute by minute, each problem (click to listen) and Copy a note for the leads.
+  - **3 · Export** writes Service/<date>/<date> Sermon.mp4 (for example "Oct 11th 2026/Oct 11th Sermon.mp4") and self-checks it. Quality and Export show only the cut, with snapshots of the video, and play it with the banner and fades. Going back Home while it exports lets it carry on.
+- **The last page** shows the finished sermon, its self-check, Show in Finder and the note for the leads.
+
+To check a screen without clicking through, put a file named `.show` in the work folder with a YouTube id and a page (`iz0PPVUleUw quality`; pages are cut, quality, export, done and preview), or `home`, `light`, `dark` or `auto`.
 
 Still to come before the pilot: tools bundled with the app (no Homebrew), Drive upload, and signing.
 
