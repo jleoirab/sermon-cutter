@@ -48,7 +48,10 @@ struct PlayerPane: View {
     var body: some View {
         ZStack {
             Color.black
+            // Until the video is in, AVKit draws its own audio artwork; ours
+            // says the same thing, so keep just ours.
             PlayerView(player: model.player)
+                .opacity(model.hasVideo ? 1 : 0)
             if model.playsCut, let banner = model.bannerImage {
                 BannerFrame(image: banner)
                     .opacity(model.bannerOpacity(at: model.playhead))
