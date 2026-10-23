@@ -52,6 +52,9 @@ final class CoreTests: XCTestCase {
         let m = ServiceTitle("WHAT IS THE ECCLESIA?  | MDWK SERVICE | 7TH OCTOBER, 2026 | CELEBRATION CHURCH INT'L")
         XCTAssertEqual(m.sermon, "What Is the Ecclesia?")
         XCTAssertEqual(m.service, "Midweek")
+        XCTAssertEqual(t.date, Naming.date(fromYYYYMMDD: "20261011"))
+        XCTAssertEqual(m.date, Naming.date(fromYYYYMMDD: "20261007"))
+        XCTAssertEqual(ServiceTitle("SPECIAL MDWK SERVICE WITH APOSTLE EMMANUEL IREN | 21ST OCTOBER 2026").sermon, "Special Midweek Service with Apostle Emmanuel Iren")
         XCTAssertEqual(ServiceTitle("A plain title").sermon, "A plain title")
         XCTAssertNil(ServiceTitle("A plain title").service)
     }
@@ -65,6 +68,12 @@ final class CoreTests: XCTestCase {
         ]
         XCTAssertEqual(StreamPicker.thisSunday(s)?.id, "a")
         XCTAssertEqual(StreamPicker.thisSunday([s[0]])?.id, "w")
+        // The channel listing often has no upload date; the title's date counts.
+        let undated = [
+            StreamEntry(id: "w", title: "MIDWEEK | MDWK SERVICE | 21ST OCTOBER 2026", url: ""),
+            StreamEntry(id: "a", title: "THE TOXIC CHURCH | 1ST SERVICE | 18TH OCTOBER 2026", url: ""),
+        ]
+        XCTAssertEqual(StreamPicker.thisSunday(undated)?.id, "a")
         XCTAssertNil(StreamPicker.thisSunday([]))
     }
 

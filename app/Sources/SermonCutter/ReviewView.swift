@@ -85,10 +85,10 @@ struct ReviewView: View {
                 }
             }
         }
-        ToolbarItem(placement: .primaryAction) {
+        ToolbarItem(placement: .automatic) {
             StatusChip(model: model)
         }
-        ToolbarItem(placement: .primaryAction) {
+        ToolbarItem(placement: .automatic) {
             ExportPill(model: model)
         }
     }

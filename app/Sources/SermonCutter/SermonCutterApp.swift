@@ -47,6 +47,7 @@ struct ContentView: View {
         .toolbarBackground(Brand.bar, for: .windowToolbar)
         .toolbarBackground(.visible, for: .windowToolbar)
         .task { await app.checkTools() }
+        .task { await app.watchForShowRequests() }
     }
 }
 

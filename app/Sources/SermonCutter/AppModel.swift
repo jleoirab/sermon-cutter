@@ -60,6 +60,44 @@ final class AppModel: ObservableObject {
         engine = Engine(executable: exe, environment: Engine.environment(model: URL(fileURLWithPath: modelPath)))
     }
 
+    /// For checking the screens without clicking through them: a file named
+    /// ".show" in the work folder holding a YouTube id and a page ("cut",
+    /// "quality", "export", "done", "preview") opens that saved Sunday there,
+    /// and "home" goes back Home. The file is removed once it's read.
+    func watchForShowRequests() async {
+        let file = folders.work.appendingPathComponent(".show")
+        while !Task.isCancelled {
+            if let text = try? String(contentsOf: file, encoding: .utf8) {
+                try? FileManager.default.removeItem(at: file)
+                show(text.split(whereSeparator: \.isWhitespace).map(String.init))
+            }
+            try? await Task.sleep(for: .seconds(1.5))
+        }
+    }
+
+    private func show(_ words: [String]) {
+        guard let first = words.first else { return }
+        if first == "home" {
+            closeSunday()
+            return
+        }
+        if current?.sunday.id != first {
+            closeSunday()
+            guard let saved = folders.load(first) else { return }
+            open(saved: saved)
+        }
+        guard let model = current, words.count > 1 else { return }
+        model.endsPreview = nil
+        switch words[1] {
+        case "cut": model.page = .cut
+        case "quality": model.page = .quality
+        case "export": model.page = .export
+        case "done": model.page = .done
+        case "preview": model.page = .cut; model.endsPreview = words.count > 2 ? words[2] : "opening"
+        default: break
+        }
+    }
+
     func checkTools() async {
         guard let engine else { return }
         tools = try? await engine.run(["tools"]).result("tools", as: ToolsInfo.self)

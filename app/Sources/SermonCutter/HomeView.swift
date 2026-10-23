@@ -29,10 +29,11 @@ struct HomeView: View {
             .frame(maxWidth: .infinity)
         }
         .toolbar {
-            ToolbarItem(placement: .primaryAction) {
+            // On the Mac, .automatic items sit at the trailing end.
+            ToolbarItem(placement: .automatic) {
                 PasteLinkField()
             }
-            ToolbarItem(placement: .primaryAction) {
+            ToolbarItem(placement: .automatic) {
                 SettingsLink {
                     Image(systemName: "gearshape")
                         .font(.system(size: 15, weight: .medium))
@@ -169,12 +170,14 @@ struct ThisSundayCard: View {
 
     private func content(_ entry: StreamEntry) -> some View {
         let title = ServiceTitle(entry.title)
-        let date = entry.uploadDate.flatMap(Naming.date(fromYYYYMMDD:))
+        let date = entry.serviceDate
         let blocked = entry.liveStatus == "is_live" || entry.liveStatus == "is_upcoming"
+        let sunday = date.map(Naming.isSunday) ?? false
         return HStack(alignment: .top, spacing: 24) {
             Thumbnail(id: entry.id, duration: entry.duration)
                 .frame(maxWidth: 400)
                 .clipShape(RoundedRectangle(cornerRadius: 16, style: .continuous))
+                .layoutPriority(1)
             VStack(alignment: .leading, spacing: 10) {
                 Eyebrow(eyebrow(date))
                     .padding(.horizontal, 10)
@@ -196,7 +199,7 @@ struct ThisSundayCard: View {
                     Chip(text: entry.liveStatus == "is_live" ? "Live now: come back once the service has ended" : "Not started yet",
                          foreground: Brand.warnFg, background: Brand.warnBg, size: 13)
                 } else {
-                    Button(app.hasSaved(entry.id) ? "Open this Sunday" : "Prepare this Sunday") { app.open(link: entry.url) }
+                    Button(app.hasSaved(entry.id) ? (sunday ? "Open this Sunday" : "Open this service") : (sunday ? "Prepare this Sunday" : "Prepare this service")) { app.open(link: entry.url) }
                         .buttonStyle(PillButtonStyle(kind: .primary, size: .large))
                 }
             }
@@ -359,12 +362,13 @@ struct StreamCard: View {
 
     var body: some View {
         let title = ServiceTitle(entry.title)
-        let date = entry.uploadDate.flatMap(Naming.date(fromYYYYMMDD:))
+        let date = entry.serviceDate
         VStack(alignment: .leading, spacing: 0) {
             Thumbnail(id: entry.id, duration: entry.duration)
             VStack(alignment: .leading, spacing: 4) {
                 Text(title.sermon).font(Brand.lato(14, .black)).lineLimit(1)
-                Text([title.service, date.map(Naming.monthDay)].compactMap { $0 }.joined(separator: " · "))
+                // Always a line here, so every card's button sits at the same height.
+                Text([title.service, date.map(Naming.monthDay)].compactMap { $0 }.joined(separator: " · ").ifEmpty(" "))
                     .font(Brand.lato(13))
                     .foregroundStyle(Brand.text2)
                     .lineLimit(1)
@@ -429,4 +433,8 @@ struct RunningChip: View {
             Chip(text: "Ready to export", foreground: Brand.tonalFg, background: Brand.tonalBg)
         }
     }
+}
+
+extension String {
+    func ifEmpty(_ other: String) -> String { isEmpty ? other : self }
 }
