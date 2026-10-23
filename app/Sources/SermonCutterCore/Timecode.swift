@@ -30,6 +30,16 @@ public enum Timecode {
         return total
     }
 
+    /// "2 h 47 min", "54 min": a stream's length at a glance.
+    public static func long(_ seconds: Double) -> String {
+        let m = Int((seconds / 60).rounded())
+        switch (m / 60, m % 60) {
+        case (0, let r): return "\(r) min"
+        case (let h, 0): return "\(h) h"
+        case (let h, let r): return "\(h) h \(r) min"
+        }
+    }
+
     /// "31 s", "8 min 17 s", "2 min".
     public static func span(_ seconds: Double) -> String {
         let s = Int(seconds.rounded())

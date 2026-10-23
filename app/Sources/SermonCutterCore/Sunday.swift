@@ -178,4 +178,90 @@ public enum Naming {
     public static func fileName(_ date: Date) -> String {
         "\(day(date)) Sermon.mp4"
     }
+
+    /// "Oct 11"
+    public static func monthDay(_ date: Date) -> String {
+        let c = calendar.dateComponents([.month, .day], from: date)
+        return "\(months[(c.month ?? 1) - 1]) \(c.day ?? 1)"
+    }
+
+    /// "Oct 11, 2026"
+    public static func display(_ date: Date) -> String {
+        "\(monthDay(date)), \(calendar.component(.year, from: date))"
+    }
+
+    public static func isSunday(_ date: Date) -> Bool {
+        calendar.component(.weekday, from: date) == 1
+    }
+
+    /// "Sunday", "Wednesday"
+    public static func weekday(_ date: Date) -> String {
+        let names = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"]
+        return names[calendar.component(.weekday, from: date) - 1]
+    }
+}
+
+/// The words heard near the end of the sermon, as the engine cached them
+/// while looking for "please be seated".
+public struct Transcript: Codable, Sendable {
+    public struct Word: Codable, Equatable, Sendable {
+        /// Seconds into the stream.
+        public var start: Double
+        public var end: Double
+        public var text: String
+
+        public init(start: Double, end: Double, text: String) {
+            self.start = start
+            self.end = end
+            self.text = text
+        }
+    }
+
+    public var words: [Word]
+
+    public init(words: [Word]) {
+        self.words = words
+    }
+
+    public static func load(_ url: URL) -> Transcript? {
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        return try? JSONDecoder().decode(Transcript.self, from: data)
+    }
+
+    /// Up to `before` words ending at or before `t` and `after` words after it.
+    public func around(_ t: Double, before: Int = 14, after: Int = 5) -> (before: [Word], after: [Word]) {
+        let head = words.filter { $0.end <= t + 0.05 }.suffix(before)
+        let tail = words.filter { $0.end > t + 0.05 }.prefix(after)
+        return (Array(head), Array(tail))
+    }
+}
+
+/// The export's self-check, in the few plain lines the last page shows.
+public struct CheckLine: Equatable, Sendable {
+    public var text: String
+    public var passed: Bool
+    /// The engine's own measurement, for when it failed.
+    public var detail: String?
+}
+
+extension VerifyReport {
+    public func lines(length: Double?) -> [CheckLine] {
+        func group(_ names: [String], _ text: String) -> CheckLine? {
+            let found = checks.filter { names.contains($0.name) }
+            guard !found.isEmpty else { return nil }
+            let failed = found.filter { !$0.passed }
+            return CheckLine(text: text, passed: failed.isEmpty, detail: failed.isEmpty ? nil : failed.map(\.detail).joined(separator: "; "))
+        }
+        let known = ["length", "banner at start", "banner at end", "quiet start", "quiet end", "footage in the middle"]
+        var out = [
+            group(["length"], length.map { "The right length: \(Timecode.format($0))" } ?? "The right length"),
+            group(["banner at start", "banner at end"], "The banner is on at both ends"),
+            group(["quiet start", "quiet end"], "Quiet at the very start and end"),
+            group(["footage in the middle"], "The sermon plays in between"),
+        ].compactMap { $0 }
+        for c in checks where !known.contains(c.name) && !c.passed {
+            out.append(CheckLine(text: "The file's format", passed: false, detail: c.detail))
+        }
+        return out
+    }
 }

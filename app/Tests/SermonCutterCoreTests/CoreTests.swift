@@ -44,4 +44,60 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(Engine.number(8.0), "8")
         XCTAssertEqual(Engine.number(0.5), "0.5")
     }
+
+    func testServiceTitles() {
+        let t = ServiceTitle("YOUR MOUNTAIN | 1ST SERVICE | 11TH OCTOBER 2026 | CELEBRATION CHURCH INT'L")
+        XCTAssertEqual(t.sermon, "Your Mountain")
+        XCTAssertEqual(t.service, "1st service")
+        let m = ServiceTitle("WHAT IS THE ECCLESIA?  | MDWK SERVICE | 7TH OCTOBER, 2026 | CELEBRATION CHURCH INT'L")
+        XCTAssertEqual(m.sermon, "What Is the Ecclesia?")
+        XCTAssertEqual(m.service, "Midweek")
+        XCTAssertEqual(ServiceTitle("A plain title").sermon, "A plain title")
+        XCTAssertNil(ServiceTitle("A plain title").service)
+    }
+
+    func testPicksThisSunday() {
+        let s = [
+            StreamEntry(id: "w", title: "MIDWEEK | MDWK SERVICE", url: "", uploadDate: "20261021"),
+            StreamEntry(id: "b", title: "THE TOXIC CHURCH | 2ND SERVICE", url: "", uploadDate: "20261018"),
+            StreamEntry(id: "a", title: "THE TOXIC CHURCH | 1ST SERVICE", url: "", uploadDate: "20261018"),
+            StreamEntry(id: "o", title: "YOUR MOUNTAIN | 1ST SERVICE", url: "", uploadDate: "20261011"),
+        ]
+        XCTAssertEqual(StreamPicker.thisSunday(s)?.id, "a")
+        XCTAssertEqual(StreamPicker.thisSunday([s[0]])?.id, "w")
+        XCTAssertNil(StreamPicker.thisSunday([]))
+    }
+
+    func testShortTimesAndDates() {
+        XCTAssertEqual(Timecode.long(10044), "2 h 47 min")
+        XCTAssertEqual(Timecode.long(3289), "55 min")
+        XCTAssertEqual(Timecode.long(7200), "2 h")
+        let d = Naming.date(fromYYYYMMDD: "20261011")!
+        XCTAssertEqual(Naming.monthDay(d), "Oct 11")
+        XCTAssertEqual(Naming.display(d), "Oct 11, 2026")
+        XCTAssertTrue(Naming.isSunday(d))
+        XCTAssertEqual(Naming.weekday(Naming.date(fromYYYYMMDD: "20261021")!), "Wednesday")
+    }
+
+    func testTranscriptAroundTheEnd() throws {
+        let json = #"{"covered":[[8900.0,9000.0]],"words":[{"start":8950.0,"end":8950.4,"text":"Please"},{"start":8950.4,"end":8950.6,"text":"be"},{"start":8950.6,"end":8951.0,"text":"seated."},{"start":8952.0,"end":8952.5,"text":"Thank"}]}"#
+        let t = try JSONDecoder().decode(Transcript.self, from: Data(json.utf8))
+        let a = t.around(8951.0)
+        XCTAssertEqual(a.before.map(\.text), ["Please", "be", "seated."])
+        XCTAssertEqual(a.after.map(\.text), ["Thank"])
+    }
+
+    func testSelfCheckInPlainWords() {
+        let v = VerifyReport(passed: false, checks: [
+            VerifyCheck(name: "length", passed: true, detail: "ok"),
+            VerifyCheck(name: "banner at start", passed: true, detail: "ok"),
+            VerifyCheck(name: "banner at end", passed: false, detail: "SSIM 0.2"),
+            VerifyCheck(name: "quiet start", passed: true, detail: "ok"),
+            VerifyCheck(name: "quiet end", passed: true, detail: "ok"),
+        ])
+        let lines = v.lines(length: 4424)
+        XCTAssertEqual(lines.map(\.text), ["The right length: 1:13:44", "The banner is on at both ends", "Quiet at the very start and end"])
+        XCTAssertEqual(lines.map(\.passed), [true, false, true])
+        XCTAssertEqual(lines[1].detail, "SSIM 0.2")
+    }
 }

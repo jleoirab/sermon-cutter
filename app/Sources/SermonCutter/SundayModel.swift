@@ -18,54 +18,70 @@ struct Step: Identifiable, Equatable {
     var detail: String?
 }
 
+/// The Review screen's three steps, and the page that follows the export.
+enum ReviewPage: Equatable {
+    case cut, quality, export, done
+}
+
 /// One Sunday's job: preparing the stream, the cut being reviewed, and the
 /// export.
 @MainActor
 final class SundayModel: ObservableObject {
     @Published var sunday: Sunday
     @Published var steps: [Step] = [
-        Step(id: "info", title: "Stream"),
-        Step(id: "audio", title: "Audio"),
-        Step(id: "find", title: "Sermon found"),
-        Step(id: "sound", title: "Sound checked"),
-        Step(id: "video", title: "Video"),
-        Step(id: "picture", title: "Picture checked"),
+        Step(id: "info", title: "Reading the stream"),
+        Step(id: "audio", title: "Downloading the sound"),
+        Step(id: "find", title: "Finding the sermon"),
+        Step(id: "sound", title: "Checking the sound"),
+        Step(id: "video", title: "Downloading the video"),
+        Step(id: "picture", title: "Checking the picture"),
     ]
+    @Published var page: ReviewPage = .cut
     @Published var playhead: Double = 0
+    @Published var isPlaying = false
     @Published var loudness: Loudness?
+    @Published var transcript: Transcript?
     @Published var checking = false
     @Published var exporting = false
     @Published var exportProgress: Double?
+    @Published var exportETA: Double?
     @Published var exportError: String?
     @Published var problem: String?
-    /// "opening" or "closing" while a preview renders.
-    @Published var previewing: String?
-    @Published var previewProgress: Double?
-    /// The preview being shown.
-    @Published var previewEnd: String?
-    let previewPlayer = AVPlayer()
+    /// The banner, read once for the thumbnail, the player and the preview.
+    @Published var bannerImage: NSImage?
+    @Published var bannerUnreadable = false
+    /// Snapshots across the cut, for the timeline on Quality and Export.
+    @Published var filmstrip: [NSImage] = []
+    /// "opening" or "closing" while Preview the ends is open.
+    @Published var endsPreview: String?
 
     let engine: Engine
-    let folders: Folders
+    var folders: Folders
     let player = AVPlayer()
     private var tasks: [Task<Void, Never>] = []
+    private var exportTask: Task<Void, Never>?
     private var timeObserver: Any?
     private var loadedMedia: String?
+    private var filmstripKey = ""
 
     init(sunday: Sunday, engine: Engine, folders: Folders) {
         self.sunday = sunday
         self.engine = engine
         self.folders = folders
+        if sunday.verify?.passed == true, let p = sunday.exportPath, FileManager.default.fileExists(atPath: p) {
+            page = .done
+        }
         timeObserver = player.addPeriodicTimeObserver(
-            forInterval: CMTime(seconds: 0.2, preferredTimescale: 600), queue: .main
+            forInterval: CMTime(seconds: 0.1, preferredTimescale: 600), queue: .main
         ) { [weak self] t in
             MainActor.assumeIsolated {
                 guard let self, t.seconds.isFinite else { return }
-                self.playhead = t.seconds
+                self.tick(t.seconds)
             }
         }
         if let id = sunday.id {
             loudness = Loudness.load(folders.soundCache(id))
+            transcript = Transcript.load(folders.wordsCache(id))
         }
         loadMedia()
     }
@@ -80,16 +96,37 @@ final class SundayModel: ObservableObject {
 
     // MARK: - Facts the views use
 
-    var title: String { sunday.info?.title ?? sunday.url }
-    var dateText: String? { sunday.date.map { Naming.folderName($0) } }
+    var title: ServiceTitle { ServiceTitle(sunday.info?.title ?? sunday.url) }
+
+    /// "1st service · Oct 11, 2026 · from a 2 h 47 min stream"
+    var subtitle: String {
+        var parts: [String] = []
+        if let s = title.service { parts.append(s) }
+        if let d = sunday.date { parts.append(Naming.display(d)) }
+        if let len = sunday.find?.streamSeconds ?? sunday.info?.duration { parts.append("from a \(Timecode.long(len)) stream") }
+        return parts.joined(separator: " · ")
+    }
+
     var duration: Double {
         if let d = sunday.find?.streamSeconds ?? sunday.info?.duration { return d }
         let d = player.currentItem?.duration.seconds ?? 0
         return d.isFinite && d > 1 ? d : 1
     }
-    var preparing: Bool { steps.contains { if case .running = $0.state { return true } else { return false } } }
+    var cutLength: Double? {
+        guard let a = sunday.cutIn, let b = sunday.cutOut else { return nil }
+        return b - a
+    }
+    var found: Bool { sunday.find != nil && sunday.cutIn != nil && sunday.cutOut != nil }
     var hasVideo: Bool { sunday.videoFile.map { FileManager.default.fileExists(atPath: $0) } ?? false }
     var exportURL: URL? { sunday.date.map { folders.sermonFile($0) } }
+    var preparing: Bool { steps.contains { if case .running = $0.state { return true } else { return false } } }
+    var failedStep: Step? { steps.first { if case .failed = $0.state { return true } else { return false } } }
+
+    /// How far the video download has got, while it downloads.
+    var videoProgress: Double? {
+        guard let s = steps.first(where: { $0.id == "video" }), case .running(let f) = s.state else { return nil }
+        return f ?? 0
+    }
 
     /// Whether the last check covered a different cut than the current one.
     var qualityIsStale: Bool {
@@ -97,16 +134,29 @@ final class SundayModel: ObservableObject {
         return abs(q.cutIn - a) > 0.5 || abs(q.cutOut - b) > 0.5
     }
 
-    var allDone: Bool { steps.allSatisfy { $0.state == .done } }
-    var anyFailed: Bool { steps.contains { if case .failed = $0.state { return true } else { return false } } }
-
     var canExport: Bool {
-        hasVideo && sunday.bannerPath != nil && sunday.cutIn != nil && sunday.cutOut != nil && !exporting
+        hasVideo && sunday.bannerPath != nil && found && !exporting
     }
+
+    /// Why Export can't start yet, in plain words.
+    var exportBlocker: String? {
+        if !found { return "Waiting for the sermon to be found." }
+        if !hasVideo {
+            if let f = videoProgress { return "Waiting for the video to download (\(Int(f * 100))%)." }
+            return "Waiting for the video to download."
+        }
+        if sunday.bannerPath == nil { return "Add this Sunday's banner in step 1 first." }
+        return nil
+    }
+
+    /// Quality and Export play the cut as it will be exported: from Start to
+    /// End, with the banner and the fades at both ends.
+    var playsCut: Bool { page == .quality || page == .export }
 
     // MARK: - Preparing
 
     func prepare() {
+        for i in steps.indices where steps[i].state != .done { steps[i].state = .waiting }
         let t = Task { await self.runPrepare() }
         tasks.append(t)
     }
@@ -138,7 +188,7 @@ final class SundayModel: ObservableObject {
                 sunday.info = try await engine.run(["info", sunday.url]).result("info", as: StreamInfo.self)
                 save()
             }
-            set("info", .done, detail: dateText ?? sunday.info?.title)
+            set("info", .done, detail: sunday.date.map(Naming.display) ?? sunday.info?.title)
             guard let id = sunday.id else { throw EngineError.failed(step: "info", message: "That doesn't look like a YouTube link.") }
             try FileManager.default.createDirectory(at: folders.work, withIntermediateDirectories: true)
             if sunday.bannerPath == nil, let d = sunday.date {
@@ -173,7 +223,6 @@ final class SundayModel: ObservableObject {
         } catch is CancellationError {
         } catch {
             set(current, .failed(error.localizedDescription))
-            problem = error.localizedDescription
         }
     }
 
@@ -228,8 +277,10 @@ final class SundayModel: ObservableObject {
             sunday.cutIn = found.cutIn
             sunday.cutOut = found.cutOut
             save()
+            if let a = sunday.cutIn, !hasVideo || playhead < 1 { seek(a) }
         }
         loudness = Loudness.load(folders.soundCache(id))
+        transcript = Transcript.load(folders.wordsCache(id))
         if let a = sunday.cutIn, let b = sunday.cutOut {
             set("find", .done, detail: "\(Timecode.format(a)) to \(Timecode.format(b))")
         }
@@ -268,7 +319,7 @@ final class SundayModel: ObservableObject {
         set(step, .done, detail: report.headline)
     }
 
-    /// Checks again after In or Out moved.
+    /// Checks again after Start or End moved.
     func recheck() {
         let t = Task {
             do {
@@ -296,6 +347,21 @@ final class SundayModel: ObservableObject {
         }
     }
 
+    private func tick(_ t: Double) {
+        playhead = t
+        let playing = player.timeControlStatus == .playing
+        if isPlaying != playing { isPlaying = playing }
+        if playsCut, let b = sunday.cutOut {
+            player.volume = Float(gain(at: t))
+            if playing && t >= b - 0.05 {
+                player.pause()
+                isPlaying = false
+            }
+        } else if player.volume != 1 {
+            player.volume = 1
+        }
+    }
+
     func seek(_ t: Double) {
         let clamped = max(0, min(t, duration))
         playhead = clamped
@@ -303,7 +369,46 @@ final class SundayModel: ObservableObject {
     }
 
     func togglePlay() {
-        if player.timeControlStatus == .playing { player.pause() } else { player.play() }
+        if player.timeControlStatus == .playing {
+            player.pause()
+            isPlaying = false
+            return
+        }
+        if playsCut, let a = sunday.cutIn, let b = sunday.cutOut, playhead < a || playhead >= b - 0.2 {
+            seek(a)
+        }
+        player.play()
+        isPlaying = true
+    }
+
+    func play(from t: Double) {
+        seek(t)
+        player.play()
+        isPlaying = true
+    }
+
+    /// How much of the banner covers the picture at stream time `t`: 1 while
+    /// it holds, fading over the dissolve, 0 in between.
+    func bannerOpacity(at t: Double) -> Double {
+        guard let a = sunday.cutIn, let b = sunday.cutOut else { return 0 }
+        let tm = sunday.timings
+        func edge(_ x: Double, hold: Double) -> Double {
+            if x < hold { return 1 }
+            if tm.dissolve <= 0 { return 0 }
+            return max(0, 1 - (x - hold) / tm.dissolve)
+        }
+        return max(edge(t - a, hold: tm.openHold), edge(b - t, hold: tm.closeHold))
+    }
+
+    /// The sound level at stream time `t`: fading in after Start and out
+    /// before End.
+    func gain(at t: Double) -> Double {
+        guard let a = sunday.cutIn, let b = sunday.cutOut else { return 1 }
+        let tm = sunday.timings
+        var g = 1.0
+        if tm.fadeIn > 0 { g = min(g, max(0, (t - a) / tm.fadeIn)) }
+        if tm.fadeOut > 0 { g = min(g, max(0, (b - t) / tm.fadeOut)) }
+        return g
     }
 
     // MARK: - Editing the cut
@@ -320,7 +425,7 @@ final class SundayModel: ObservableObject {
         save()
     }
 
-    /// Puts In the lead-in's length before the preacher starts.
+    /// Puts Start the lead-in's length before the preacher starts.
     func applyLeadIn(_ seconds: Double) {
         sunday.leadIn = max(0, seconds)
         if let f = sunday.find {
@@ -328,6 +433,20 @@ final class SundayModel: ObservableObject {
         }
         save()
     }
+
+    func resetCut() {
+        guard let f = sunday.find else { return }
+        sunday.cutIn = f.cutIn
+        sunday.cutOut = f.cutOut
+        save()
+    }
+
+    var cutChanged: Bool {
+        guard let f = sunday.find else { return false }
+        return sunday.cutIn != f.cutIn || sunday.cutOut != f.cutOut
+    }
+
+    // MARK: - The banner
 
     /// Downloads a banner shared on Google Drive with "anyone with the link".
     func fetchBanner(from link: String) async throws {
@@ -355,16 +474,53 @@ final class SundayModel: ObservableObject {
         save()
     }
 
+    /// Reads the banner off the main thread: the first read of a file in
+    /// Documents waits for macOS to ask for permission.
+    func loadBanner() async {
+        bannerImage = nil
+        bannerUnreadable = false
+        guard let path = sunday.bannerPath else { return }
+        let data = await Task.detached(priority: .userInitiated) { FileManager.default.contents(atPath: path) }.value
+        guard !Task.isCancelled, path == sunday.bannerPath else { return }
+        if let data, let image = NSImage(data: data) {
+            bannerImage = image
+        } else {
+            bannerUnreadable = true
+        }
+    }
+
     func setTimings(_ t: Timings) {
         sunday.timings = t
         save()
     }
 
-    func resetCut() {
-        guard let f = sunday.find else { return }
-        sunday.cutIn = f.cutIn
-        sunday.cutOut = f.cutOut
-        save()
+    // MARK: - Snapshots for the timeline
+
+    /// Pictures from across the cut, made again when Start or End move.
+    func loadFilmstrip(count: Int = 10) async {
+        guard hasVideo, let v = sunday.videoFile, let a = sunday.cutIn, let b = sunday.cutOut else {
+            filmstrip = []
+            return
+        }
+        let key = "\(v)|\(Int(a / 5))|\(Int(b / 5))|\(count)"
+        guard key != filmstripKey else { return }
+        let generator = AVAssetImageGenerator(asset: AVURLAsset(url: URL(fileURLWithPath: v)))
+        generator.maximumSize = CGSize(width: 320, height: 180)
+        generator.appliesPreferredTrackTransform = true
+        generator.requestedTimeToleranceBefore = CMTime(seconds: 4, preferredTimescale: 600)
+        generator.requestedTimeToleranceAfter = CMTime(seconds: 4, preferredTimescale: 600)
+        var images: [NSImage] = []
+        for i in 0..<count {
+            let t = a + (b - a) * (Double(i) + 0.5) / Double(count)
+            guard !Task.isCancelled else { return }
+            if let frame = try? await generator.image(at: CMTime(seconds: t, preferredTimescale: 600)) {
+                let cg = frame.image
+                images.append(NSImage(cgImage: cg, size: NSSize(width: cg.width, height: cg.height)))
+            }
+        }
+        guard !Task.isCancelled else { return }
+        filmstrip = images
+        filmstripKey = key
     }
 
     // MARK: - Exporting
@@ -373,11 +529,16 @@ final class SundayModel: ObservableObject {
         guard canExport, let video = sunday.videoFile, let banner = sunday.bannerPath,
               let a = sunday.cutIn, let b = sunday.cutOut, let out = exportURL
         else { return }
+        player.pause()
         exporting = true
         exportProgress = 0
+        exportETA = nil
         exportError = nil
-        let t = Task {
-            defer { exporting = false }
+        exportTask = Task {
+            defer {
+                exporting = false
+                exportTask = nil
+            }
             do {
                 try FileManager.default.createDirectory(at: out.deletingLastPathComponent(), withIntermediateDirectories: true)
                 var args = [
@@ -388,7 +549,11 @@ final class SundayModel: ObservableObject {
                 if overwrite { args.append("--overwrite") }
                 let run = try await engine.run(args, keepResults: true) { [weak self] event in
                     guard event.event == "progress", event.step == "render", let f = event.fraction, let model = self else { return }
-                    Task { @MainActor in model.exportProgress = f }
+                    let eta = event.etaS
+                    Task { @MainActor in
+                        model.exportProgress = f
+                        if let eta { model.exportETA = eta }
+                    }
                 }
                 if let outcome = try? run.result("render", as: RenderOutcome.self) {
                     sunday.exported = outcome
@@ -396,52 +561,23 @@ final class SundayModel: ObservableObject {
                 }
                 sunday.verify = try? run.result("verify", as: VerifyReport.self)
                 save()
-                if let e = run.error { exportError = e }
+                if let e = run.error {
+                    exportError = e
+                } else if sunday.verify?.passed == true {
+                    page = .done
+                }
             } catch is CancellationError {
+                // Stopped: the half-written file is hidden beside the sermon.
+                let partial = out.deletingLastPathComponent().appendingPathComponent(".\(out.lastPathComponent).partial")
+                try? FileManager.default.removeItem(at: partial)
             } catch {
                 exportError = error.localizedDescription
             }
         }
-        tasks.append(t)
     }
 
-    // MARK: - Previewing the ends
-
-    /// Renders the first or last 20 seconds with the banner and fade, then
-    /// plays it.
-    func preview(_ end: String) {
-        guard let id = sunday.id, hasVideo, let video = sunday.videoFile, let banner = sunday.bannerPath,
-              let a = sunday.cutIn, let b = sunday.cutOut, previewing == nil
-        else { return }
-        previewing = end
-        previewProgress = 0
-        let out = folders.file(id, "preview-\(end).mp4")
-        let t = Task {
-            defer { previewing = nil }
-            do {
-                let args = [
-                    "render", "--source", video, "--banner", banner,
-                    "--in", Engine.number(a), "--out", Engine.number(b),
-                    "-o", out.path, "--overwrite", "--preview", end,
-                ] + sunday.timings.arguments
-                _ = try await engine.run(args) { [weak self] event in
-                    guard event.event == "progress", event.step == "render", let f = event.fraction, let model = self else { return }
-                    Task { @MainActor in model.previewProgress = f }
-                }
-                previewPlayer.replaceCurrentItem(with: AVPlayerItem(url: out))
-                previewEnd = end
-                previewPlayer.play()
-            } catch is CancellationError {
-            } catch {
-                problem = error.localizedDescription
-            }
-        }
-        tasks.append(t)
-    }
-
-    func closePreview() {
-        previewPlayer.pause()
-        previewEnd = nil
+    func stopExport() {
+        exportTask?.cancel()
     }
 
     func showExportInFinder() {

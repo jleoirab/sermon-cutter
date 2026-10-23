@@ -20,7 +20,7 @@ public enum EngineError: LocalizedError, Equatable {
     public var errorDescription: String? {
         switch self {
         case .notFound:
-            return "The Sermon Cutter engine wasn't found inside the app."
+            return "The CCI Sermon Cutter engine wasn't found inside the app."
         case .failed(_, let message):
             return message
         case .noResult(let step):
@@ -143,7 +143,16 @@ public final class Engine: @unchecked Sendable {
                 onEvent(event)
             }
         } onCancel: {
-            if process.isRunning { process.terminate() }
+            if process.isRunning {
+                // Stop what the engine started too (ffmpeg, yt-dlp), or it
+                // would carry on writing after the engine has gone.
+                let kill = Process()
+                kill.executableURL = URL(fileURLWithPath: "/usr/bin/pkill")
+                kill.arguments = ["-TERM", "-P", String(process.processIdentifier)]
+                try? kill.run()
+                kill.waitUntilExit()
+                process.terminate()
+            }
         }
         process.waitUntilExit()
         let stderr = String(data: await errTask.value, encoding: .utf8) ?? ""

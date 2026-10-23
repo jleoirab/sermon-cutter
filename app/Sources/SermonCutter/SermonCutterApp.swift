@@ -6,15 +6,16 @@ struct SermonCutterApp: App {
     @StateObject private var app = AppModel()
 
     var body: some Scene {
-        WindowGroup("Sermon Cutter") {
+        WindowGroup("CCI Sermon Cutter") {
             ContentView()
                 .environmentObject(app)
                 .frame(minWidth: 1100, minHeight: 720)
         }
-        .windowToolbarStyle(.unified)
+        .defaultSize(width: 1280, height: 820)
+        .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
             CommandGroup(replacing: .newItem) {
-                Button("New Sunday") { app.closeSunday() }
+                Button("Back to Home") { app.closeSunday() }
                     .keyboardShortcut("n")
             }
         }
@@ -32,18 +33,38 @@ struct ContentView: View {
     var body: some View {
         Group {
             if app.engineMissing {
-                ContentUnavailableView(
-                    "The engine is missing",
-                    systemImage: "exclamationmark.triangle",
-                    description: Text("This copy of Sermon Cutter was built without its engine. Rebuild it with app/build.sh.")
-                )
+                EngineMissingView()
             } else if let sunday = app.current {
-                SundayView(model: sunday)
+                ReviewView(model: sunday)
                     .id(ObjectIdentifier(sunday))
             } else {
-                StreamsView()
+                HomeView()
             }
         }
+        .font(Brand.lato(14))
+        .foregroundStyle(Brand.text)
+        .background(Brand.paper)
+        .toolbarBackground(Brand.bar, for: .windowToolbar)
+        .toolbarBackground(.visible, for: .windowToolbar)
         .task { await app.checkTools() }
+    }
+}
+
+/// Shown only when the app was built without its engine.
+struct EngineMissingView: View {
+    var body: some View {
+        VStack(spacing: 14) {
+            Image(systemName: "wrench.and.screwdriver")
+                .font(.system(size: 34, weight: .semibold))
+                .foregroundStyle(Brand.coral)
+            Text("SOMETHING'S MISSING")
+                .font(Brand.anton(40))
+            Text("This copy of CCI Sermon Cutter is missing a piece it needs to cut sermons. Install the app again, and if that doesn't fix it, let the person who set it up know.")
+                .font(Brand.lato(15))
+                .foregroundStyle(Brand.text2)
+                .multilineTextAlignment(.center)
+                .frame(maxWidth: 480)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 }

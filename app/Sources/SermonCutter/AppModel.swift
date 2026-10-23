@@ -16,6 +16,9 @@ final class AppModel: ObservableObject {
     @Published var streamsLoaded = false
     @Published var current: SundayModel?
     @Published var engineMissing = false
+    /// Sundays still exporting after going back Home, by YouTube id. Opening
+    /// one again picks it up where it is.
+    @Published var running: [String: SundayModel] = [:]
 
     private(set) var engine: Engine?
 
@@ -82,6 +85,10 @@ final class AppModel: ObservableObject {
         let trimmed = link.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
         var sunday = Sunday(url: trimmed)
+        if let id = sunday.id, let model = running[id] {
+            current = model
+            return
+        }
         if let id = sunday.id, let saved = folders.load(id) {
             sunday = saved
         }
@@ -92,9 +99,17 @@ final class AppModel: ObservableObject {
 
     func open(saved: Sunday) {
         guard let engine else { return }
+        if let id = saved.id, let model = running[id] {
+            current = model
+            return
+        }
         let model = SundayModel(sunday: saved, engine: engine, folders: folders)
         current = model
         model.prepare()
+    }
+
+    func hasSaved(_ id: String) -> Bool {
+        running[id] != nil || FileManager.default.fileExists(atPath: folders.saved(id).path)
     }
 
     /// Moves a saved Sunday's downloads and work files to the Trash.
@@ -108,8 +123,16 @@ final class AppModel: ObservableObject {
         objectWillChange.send()
     }
 
+    /// Back to Home. A Sunday that's exporting keeps going in the background.
     func closeSunday() {
-        current?.stop()
+        guard let model = current else { return }
+        if model.exporting, let id = model.sunday.id {
+            model.player.pause()
+            running[id] = model
+        } else {
+            model.stop()
+            if let id = model.sunday.id { running[id] = nil }
+        }
         current = nil
     }
 }
