@@ -99,7 +99,7 @@ struct HomeView: View {
                                 .foregroundStyle(refreshNote.failed ? Brand.badFg : Brand.text2)
                                 .transition(.opacity)
                         }
-                        Button(action: refresh) {
+                        Button { refresh() } label: {
                             Label("Refresh", systemImage: "arrow.clockwise")
                         }
                         .buttonStyle(LinkButtonStyle())
