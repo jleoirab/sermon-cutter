@@ -253,9 +253,15 @@ const LOOP_WINDOW: usize = 30;
 const LOOP_LAGS: std::ops::RangeInclusive<usize> = 4..=60;
 /// Thumbnails this close (grey levels) are the same picture.
 const SAME: f32 = 4.0;
+/// A replayed animation repeats itself almost exactly: across the repeating
+/// seconds, the typical difference is under this (grey levels). On Oct 18 the
+/// holding graphic's was 0.2 to 1.6; a live camera cutting between the same
+/// two shots on Oct 21 came back to within 3.0 to 3.2, never closer.
+const EXACT: f32 = 2.0;
 /// Half a loop apart, a holding animation looks this different (grey levels);
-/// a camera on a still stage doesn't.
-const ANIMATED: f32 = 15.0;
+/// a camera on a still stage doesn't. Oct 18's graphic: 81 to 99. The Oct 21
+/// camera, cutting between a close-up and a wide shot: 15 to 22.
+const ANIMATED: f32 = 40.0;
 
 /// Stretches where the picture is a short animation playing over and over,
 /// like the church's holding graphic on Oct 18 (a 15-second loop). A camera
@@ -278,6 +284,12 @@ pub fn holding(p: &Picture, a: f64, b: f64) -> Vec<Issue> {
         let is_loop = LOOP_LAGS.clone().any(|lag| {
             let same: Vec<usize> = window.clone().filter(|&t| d(t, t - lag) < SAME).collect();
             if same.len() * 10 < LOOP_WINDOW * 8 {
+                return false;
+            }
+            // A replay repeats exactly; a live camera only nearly does.
+            let mut repeat: Vec<f32> = same.iter().map(|&t| d(t, t - lag)).collect();
+            repeat.sort_by(|x, y| x.total_cmp(y));
+            if repeat[repeat.len() / 2] >= EXACT {
                 return false;
             }
             // Among the seconds that repeat, half a loop back must look
@@ -810,6 +822,24 @@ mod tests {
         assert_eq!(v.len(), 1, "{v:?}");
         assert!(v[0].start >= 120.0 && v[0].start <= 140.0, "{v:?}");
         assert!(v[0].end >= 235.0 && v[0].end <= 245.0, "{v:?}");
+    }
+
+    #[test]
+    fn a_camera_cutting_between_two_shots_is_not_a_holding_screen() {
+        // Oct 21: a close-up and a wide shot taking turns every 5 s. The
+        // shots come back close to how they were (3 grey levels off) but
+        // never exactly, as a replayed graphic would.
+        let mut p = Picture::new(0.0, 1.0);
+        let mut prev: Option<Vec<u8>> = None;
+        for s in 0..200usize {
+            let shot = if s % 10 < 5 { 70u8 } else { 90 };
+            let grey = shot + 3 * ((s / 10) % 2) as u8;
+            let frame = vec![grey; crate::vscan::W * crate::vscan::H];
+            p.push(&frame, prev.as_deref());
+            prev = Some(frame);
+        }
+        let v = holding(&p, 60.0, 200.0);
+        assert!(v.is_empty(), "{v:?}");
     }
 
     #[test]

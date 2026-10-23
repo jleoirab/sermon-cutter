@@ -208,6 +208,11 @@ struct QualityLegend: View {
         guard let q = model.sunday.quality else { return "Quality, minute by minute, once it's checked" }
         if model.qualityIsStale { return "Quality, minute by minute: check again" }
         let bad = q.minutes.filter { $0 != "good" }.count
-        return bad == 0 ? "Quality, minute by minute: all clear" : "Quality, minute by minute: \(bad) to look at"
+        if bad == 0 { return "Quality, minute by minute: all clear" }
+        // Say which: orange and red alone read as sound cut-offs.
+        let sound = q.issues.contains { $0.isSound }
+        let picture = q.issues.contains { !$0.isSound }
+        let what = sound && picture ? "sound or picture trouble" : sound ? "sound trouble" : "picture trouble; the sound is fine"
+        return "Quality, minute by minute: \(bad) min with \(what)"
     }
 }
