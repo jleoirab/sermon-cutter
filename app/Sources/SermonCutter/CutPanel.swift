@@ -347,13 +347,13 @@ struct WordsBox: View {
         let cueWords = WordsBox.cueWords(before + after, near: cue?.at)
         FlowLayout(spacing: 4, lineSpacing: 6) {
             Text("…").foregroundStyle(Brand.text2)
-            ForEach(Array(before.enumerated()), id: \.offset) { i, w in
-                word(w, dimmed: false, highlighted: cueWords.contains(i))
+            ForEach(WordsBox.chunks(before, highlighted: { cueWords.contains($0) })) { c in
+                chunk(c, dimmed: false)
             }
             RoundedRectangle(cornerRadius: 1).fill(Brand.coral).frame(width: 2, height: 18)
                 .accessibilityLabel("The cut ends here")
-            ForEach(Array(after.enumerated()), id: \.offset) { i, w in
-                word(w, dimmed: true, highlighted: cueWords.contains(before.count + i))
+            ForEach(WordsBox.chunks(after, highlighted: { cueWords.contains(before.count + $0) })) { c in
+                chunk(c, dimmed: true)
             }
             Text("…").foregroundStyle(Brand.text2)
         }
@@ -397,20 +397,41 @@ struct WordsBox: View {
         return Set(best.0)
     }
 
-    private func word(_ w: Transcript.Word, dimmed: Bool, highlighted: Bool) -> some View {
+    /// A word, or the cue's words run together as one highlighted phrase.
+    struct Chunk: Identifiable {
+        let id: Int
+        let words: [Transcript.Word]
+        let highlighted: Bool
+        var text: String { words.map(\.text).joined(separator: " ") }
+    }
+
+    static func chunks(_ words: [Transcript.Word], highlighted: (Int) -> Bool) -> [Chunk] {
+        var out: [Chunk] = []
+        for (i, w) in words.enumerated() {
+            let h = highlighted(i)
+            if h, let last = out.last, last.highlighted {
+                out[out.count - 1] = Chunk(id: last.id, words: last.words + [w], highlighted: true)
+            } else {
+                out.append(Chunk(id: i, words: [w], highlighted: h))
+            }
+        }
+        return out
+    }
+
+    private func chunk(_ c: Chunk, dimmed: Bool) -> some View {
         Button {
-            pick(w)
+            if let last = c.words.last { pick(last) }
         } label: {
-            Text(w.text)
-                .font(Brand.lato(14, highlighted ? .black : .regular))
-                .foregroundStyle(highlighted ? Brand.highlightFg : dimmed ? Brand.text2 : Brand.text)
-                .padding(.horizontal, highlighted ? 4 : 0)
-                .padding(.vertical, highlighted ? 1 : 0)
-                .background(highlighted ? Brand.highlightBg : .clear, in: RoundedRectangle(cornerRadius: 5))
+            Text(c.text)
+                .font(Brand.lato(14, c.highlighted ? .black : .regular))
+                .foregroundStyle(c.highlighted ? Brand.highlightFg : dimmed ? Brand.text2 : Brand.text)
+                .padding(.horizontal, c.highlighted ? 5 : 0)
+                .padding(.vertical, c.highlighted ? 1 : 0)
+                .background(c.highlighted ? Brand.highlightBg : .clear, in: RoundedRectangle(cornerRadius: 6))
                 .contentShape(Rectangle())
         }
         .buttonStyle(.plain)
-        .help("End the cut after “\(w.text)”")
+        .help("End the cut after “\(c.words.last?.text ?? "")”")
     }
 }
 

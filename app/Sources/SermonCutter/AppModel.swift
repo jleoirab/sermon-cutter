@@ -63,7 +63,8 @@ final class AppModel: ObservableObject {
     /// For checking the screens without clicking through them: a file named
     /// ".show" in the work folder holding a YouTube id and a page ("cut",
     /// "quality", "export", "done", "preview") opens that saved Sunday there,
-    /// and "home" goes back Home. The file is removed once it's read.
+    /// "home" goes back Home, and "light", "dark" or "auto" set the
+    /// appearance. The file is removed once it's read.
     func watchForShowRequests() async {
         let file = folders.work.appendingPathComponent(".show")
         while !Task.isCancelled {
@@ -77,6 +78,12 @@ final class AppModel: ObservableObject {
 
     private func show(_ words: [String]) {
         guard let first = words.first else { return }
+        switch first {
+        case "light": NSApp.appearance = NSAppearance(named: .aqua); return
+        case "dark": NSApp.appearance = NSAppearance(named: .darkAqua); return
+        case "auto": NSApp.appearance = nil; return
+        default: break
+        }
         if first == "home" {
             closeSunday()
             return
