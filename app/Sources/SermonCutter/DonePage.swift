@@ -8,6 +8,8 @@ struct DonePage: View {
     @EnvironmentObject var app: AppModel
     @ObservedObject var model: SundayModel
     @State private var player = AVPlayer()
+    @State private var playing = false
+    @State private var poster: NSImage?
     @State private var copied = false
 
     var body: some View {
@@ -15,10 +17,35 @@ struct DonePage: View {
             VStack(alignment: .leading, spacing: 16) {
                 ZStack {
                     Color.black
-                    PlayerView(player: player, controls: .inline)
+                    if playing {
+                        PlayerView(player: player, controls: .inline)
+                    } else {
+                        if let image = poster ?? model.bannerImage {
+                            BannerFrame(image: image)
+                        }
+                        Button {
+                            playing = true
+                            player.play()
+                        } label: {
+                            Image(systemName: "play.fill")
+                                .font(.system(size: 22, weight: .bold))
+                                .foregroundStyle(Color(hex: 0x111111))
+                                .frame(width: 64, height: 64)
+                                .background(.white.opacity(0.92), in: Circle())
+                                .contentShape(Circle())
+                        }
+                        .buttonStyle(.plain)
+                        .help("Play the finished sermon")
+                    }
                 }
                 .aspectRatio(16 / 9, contentMode: .fit)
                 .clipShape(RoundedRectangle(cornerRadius: 20, style: .continuous))
+                .overlay(alignment: .bottomLeading) {
+                    if !playing, let out = model.sunday.exported {
+                        OverlayLabel(text: "\(model.exportURL?.lastPathComponent ?? "The sermon") · \(Timecode.format(out.cutLen))")
+                            .padding(16)
+                    }
+                }
                 if let v = model.sunday.verify {
                     VStack(alignment: .leading, spacing: 10) {
                         Eyebrow("Checked before it was saved")
@@ -94,6 +121,15 @@ struct DonePage: View {
         .onAppear {
             if let p = model.sunday.exportPath, FileManager.default.fileExists(atPath: p) {
                 player.replaceCurrentItem(with: AVPlayerItem(url: URL(fileURLWithPath: p)))
+            }
+        }
+        .task(id: model.sunday.exportPath) {
+            // The first second of the sermon: the banner, as exported.
+            guard let p = model.sunday.exportPath else { return }
+            let generator = AVAssetImageGenerator(asset: AVURLAsset(url: URL(fileURLWithPath: p)))
+            generator.maximumSize = CGSize(width: 1280, height: 720)
+            if let frame = try? await generator.image(at: CMTime(seconds: 1, preferredTimescale: 600)) {
+                poster = NSImage(cgImage: frame.image, size: NSSize(width: frame.image.width, height: frame.image.height))
             }
         }
         .onDisappear { player.pause() }

@@ -85,10 +85,10 @@ struct ReviewView: View {
                 }
             }
         }
-        ToolbarItem(placement: .automatic) {
+        ToolbarItemGroup(placement: .automatic) {
+            // A spacer in the toolbar pushes what follows to the right.
+            Spacer()
             StatusChip(model: model)
-        }
-        ToolbarItem(placement: .automatic) {
             ExportPill(model: model)
         }
     }
@@ -192,6 +192,7 @@ struct ExportPill: View {
                 model.page = .export
             } label: {
                 Label("Export", systemImage: "square.and.arrow.up")
+                    .labelStyle(.titleAndIcon)
             }
             .buttonStyle(PillButtonStyle(kind: .primary, size: .small))
             .disabled(!model.found)

@@ -47,7 +47,7 @@ struct ServiceTimelineCard: View {
                     Text("Preacher starts")
                 }
                 Spacer()
-                Text("Drag Start or End to move them. Click anywhere to listen from there.")
+                Text("Drag Start or End. Click anywhere to listen.")
                     .lineLimit(1)
                     .truncationMode(.head)
             }

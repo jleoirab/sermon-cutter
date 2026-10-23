@@ -18,7 +18,7 @@ struct HomeView: View {
                     ThisSundayCard()
                         .frame(maxWidth: .infinity)
                     StartedBeforeCard()
-                        .frame(width: 360)
+                        .frame(width: 330)
                 }
                 .fixedSize(horizontal: false, vertical: true)
                 otherStreams
@@ -29,11 +29,10 @@ struct HomeView: View {
             .frame(maxWidth: .infinity)
         }
         .toolbar {
-            // On the Mac, .automatic items sit at the trailing end.
-            ToolbarItem(placement: .automatic) {
+            ToolbarItemGroup(placement: .automatic) {
+                // A spacer in the toolbar pushes what follows to the right.
+                Spacer()
                 PasteLinkField()
-            }
-            ToolbarItem(placement: .automatic) {
                 SettingsLink {
                     Image(systemName: "gearshape")
                         .font(.system(size: 15, weight: .medium))
@@ -185,14 +184,15 @@ struct ThisSundayCard: View {
                     .background(Brand.card2, in: Capsule())
                 (Text(title.sermon.uppercased() + (title.service == nil ? "" : " "))
                     + Text((title.service ?? "").uppercased()).foregroundStyle(Brand.coral))
-                    .font(Brand.anton(44))
+                    .font(Brand.anton(42))
                     .lineSpacing(-4)
                     .minimumScaleFactor(0.6)
                     .lineLimit(3)
                     .fixedSize(horizontal: false, vertical: true)
                 if let date {
-                    Text("Streamed \(Naming.weekday(date)), \(Naming.display(date))" + (entry.duration.map { " · \(Timecode.long($0))" } ?? ""))
+                    Text("\(Naming.weekday(date)), \(Naming.display(date))" + (entry.duration.map { " · \(Timecode.long($0))" } ?? ""))
                         .foregroundStyle(Brand.text2)
+                        .fixedSize(horizontal: false, vertical: true)
                 }
                 Spacer(minLength: 12)
                 if blocked {

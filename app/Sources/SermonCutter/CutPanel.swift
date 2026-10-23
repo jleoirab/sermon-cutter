@@ -22,7 +22,7 @@ struct CutPanel: View {
                 .scrollIndicators(.never)
                 HStack(spacing: 10) {
                     VStack(alignment: .leading, spacing: 0) {
-                        Eyebrow("Sermon length")
+                        Eyebrow("Length")
                         Text(model.cutLength.map { Timecode.format($0) } ?? "–")
                             .font(Brand.lato(18, .black).monospacedDigit())
                     }
@@ -344,15 +344,16 @@ struct WordsBox: View {
     let pick: (Transcript.Word) -> Void
 
     var body: some View {
+        let cueWords = WordsBox.cueWords(before + after, near: cue?.at)
         FlowLayout(spacing: 4, lineSpacing: 6) {
             Text("…").foregroundStyle(Brand.text2)
-            ForEach(Array(before.enumerated()), id: \.offset) { _, w in
-                word(w, dimmed: false)
+            ForEach(Array(before.enumerated()), id: \.offset) { i, w in
+                word(w, dimmed: false, highlighted: cueWords.contains(i))
             }
             RoundedRectangle(cornerRadius: 1).fill(Brand.coral).frame(width: 2, height: 18)
                 .accessibilityLabel("The cut ends here")
-            ForEach(Array(after.enumerated()), id: \.offset) { _, w in
-                word(w, dimmed: true)
+            ForEach(Array(after.enumerated()), id: \.offset) { i, w in
+                word(w, dimmed: true, highlighted: cueWords.contains(before.count + i))
             }
             Text("…").foregroundStyle(Brand.text2)
         }
@@ -363,14 +364,41 @@ struct WordsBox: View {
         .background(Brand.card, in: RoundedRectangle(cornerRadius: 12, style: .continuous))
     }
 
-    private func isCue(_ w: Transcript.Word) -> Bool {
-        guard let cue else { return false }
-        return w.start >= cue.at - 0.3 && w.end <= cue.out + 0.3
+    /// Which words say "please be seated" (or "you may be seated", "sit
+    /// down", "take your seats"): the one heard nearest the cue.
+    static func cueWords(_ words: [Transcript.Word], near t: Double?) -> Set<Int> {
+        guard let t else { return [] }
+        let tokens = words.map { $0.text.lowercased().filter(\.isLetter) }
+        var best: (ClosedRange<Int>, Double)?
+        for (i, tok) in tokens.enumerated() {
+            var j = i
+            switch tok {
+            case "seated":
+                if j > 0, tokens[j - 1] == "be" {
+                    j -= 1
+                    if j > 0, ["please", "may"].contains(tokens[j - 1]) {
+                        j -= 1
+                        if tokens[j] == "may", j > 0, tokens[j - 1] == "you" { j -= 1 }
+                    }
+                }
+            case "down":
+                guard i > 0, tokens[i - 1] == "sit" else { continue }
+                j = i - 1
+                if j > 0, tokens[j - 1] == "please" { j -= 1 }
+            case "seat", "seats":
+                while j > 0, i - j < 3, ["your", "a", "have", "take", "please"].contains(tokens[j - 1]) { j -= 1 }
+            default:
+                continue
+            }
+            let d = abs(words[i].start - t)
+            if best == nil || d < best!.1 { best = (j...i, d) }
+        }
+        guard let best, best.1 < 30 else { return [] }
+        return Set(best.0)
     }
 
-    private func word(_ w: Transcript.Word, dimmed: Bool) -> some View {
-        let highlighted = isCue(w)
-        return Button {
+    private func word(_ w: Transcript.Word, dimmed: Bool, highlighted: Bool) -> some View {
+        Button {
             pick(w)
         } label: {
             Text(w.text)
@@ -525,15 +553,16 @@ struct BannerCard: View {
                     SlowNote(text: "Waiting for macOS. If it asks to let CCI Sermon Cutter open Documents, choose Allow.")
                 }
                 HStack(spacing: 14) {
-                    Menu("Replace") {
+                    Menu {
                         Button("Choose a file…") { choosing = true }
                         Button("Paste a Google Drive link…") { pastingLink = true }
+                    } label: {
+                        Text("Replace")
                     }
-                    .menuStyle(.borderlessButton)
+                    .menuStyle(.button)
+                    .buttonStyle(LinkButtonStyle())
                     .menuIndicator(.hidden)
                     .fixedSize()
-                    .font(Brand.lato(13, .bold))
-                    .foregroundStyle(Brand.link)
                     Button("Preview the ends ›") { model.endsPreview = "opening" }
                         .buttonStyle(LinkButtonStyle())
                         .disabled(!model.hasVideo || model.bannerImage == nil)
