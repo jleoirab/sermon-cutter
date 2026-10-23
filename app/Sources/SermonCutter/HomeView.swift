@@ -7,6 +7,7 @@ import SermonCutterCore
 struct HomeView: View {
     @EnvironmentObject var app: AppModel
     @State private var showAll = false
+    @State private var refreshNote: (text: String, failed: Bool)?
 
     var body: some View {
         ScrollView {
@@ -44,6 +45,27 @@ struct HomeView: View {
         .task { if app.streams.isEmpty { await app.loadStreams() } }
     }
 
+    /// Looks for new streams, then says what it found for a few seconds.
+    @MainActor private func refresh() {
+        let before = Set(app.streams.map(\.id))
+        refreshNote = nil
+        Task {
+            await app.loadStreams()
+            let fresh = app.streams.filter { !before.contains($0.id) }.count
+            let note: (text: String, failed: Bool)
+            if app.streamsError != nil {
+                note = ("Couldn't reach YouTube", true)
+            } else if fresh == 0 {
+                note = ("Up to date", false)
+            } else {
+                note = (fresh == 1 ? "1 new stream" : "\(fresh) new streams", false)
+            }
+            withAnimation { refreshNote = note }
+            try? await Task.sleep(for: .seconds(4))
+            withAnimation { refreshNote = nil }
+        }
+    }
+
     private var others: [StreamEntry] {
         let hero = StreamPicker.thisSunday(app.streams)
         return app.streams.filter { $0.id != hero?.id }
@@ -64,11 +86,20 @@ struct HomeView: View {
                             .buttonStyle(LinkButtonStyle())
                     }
                     if app.loadingStreams && app.streamsLoaded {
-                        ProgressView().controlSize(.small)
+                        HStack(spacing: 6) {
+                            ProgressView().controlSize(.mini)
+                            Text("Checking YouTube…")
+                        }
+                        .font(Brand.lato(13))
+                        .foregroundStyle(Brand.text2)
                     } else if app.streamsLoaded {
-                        Button {
-                            Task { await app.loadStreams() }
-                        } label: {
+                        if let refreshNote {
+                            Text(refreshNote.text)
+                                .font(Brand.lato(13))
+                                .foregroundStyle(refreshNote.failed ? Brand.badFg : Brand.text2)
+                                .transition(.opacity)
+                        }
+                        Button(action: refresh) {
                             Label("Refresh", systemImage: "arrow.clockwise")
                         }
                         .buttonStyle(LinkButtonStyle())
@@ -248,7 +279,9 @@ struct Thumbnail: View {
                     AsyncImage(url: url) { phase in
                         if let image = phase.image {
                             // hqdefault is 4:3 with bars; filling 16:9 crops them off.
-                            image.resizable().scaledToFill()
+                            // The cropped-off part still takes clicks unless told not to,
+                            // and it reaches over whatever sits just above the card.
+                            image.resizable().scaledToFill().allowsHitTesting(false)
                         } else {
                             Brand.card2
                         }
@@ -258,6 +291,7 @@ struct Thumbnail: View {
                 }
             }
             .clipped()
+            .contentShape(Rectangle())
             .overlay(alignment: .bottomTrailing) {
                 if let duration {
                     Text(Timecode.format(duration))
