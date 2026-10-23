@@ -31,7 +31,7 @@ struct QualityPanel: View {
                         }
                         minutes(q)
                         if !q.videoChecked {
-                            Text(model.hasVideo ? "Checking the picture now." : "The picture is checked once the video has downloaded.")
+                            Text(model.hasVideo ? "Checking picture quality now." : "Picture quality is checked once the video has downloaded.")
                                 .font(Brand.lato(12))
                                 .foregroundStyle(Brand.text2)
                         }
