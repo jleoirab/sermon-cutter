@@ -31,9 +31,9 @@ final class SundayModel: ObservableObject {
     @Published var steps: [Step] = [
         Step(id: "info", title: "Reading the stream"),
         Step(id: "audio", title: "Downloading the sound"),
-        Step(id: "find", title: "Locating the sermon"),
+        Step(id: "find", title: "Locating sermon segment"),
         Step(id: "sound", title: "Checking the sound"),
-        Step(id: "video", title: "Downloading the video"),
+        Step(id: "video", title: "Downloading video"),
         Step(id: "picture", title: "Checking picture quality"),
     ]
     @Published var page: ReviewPage = .cut
