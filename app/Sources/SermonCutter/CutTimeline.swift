@@ -30,6 +30,7 @@ struct CutTimelineCard: View {
                 .gesture(
                     DragGesture(minimumDistance: 0)
                         .onChanged { v in seek(v.location.x, w) }
+                        .onEnded { _ in model.play(from: model.playhead) }
                 )
             }
             .frame(height: 100)
@@ -47,9 +48,9 @@ struct CutTimelineCard: View {
 
     private var hint: String {
         switch model.page {
-        case .quality: return "Click a problem on the right to jump the player there."
-        case .export where model.exporting: return "You can still play and listen while it exports."
-        default: return "This is exactly what will be exported."
+        case .quality: return "Click the timeline to play from there, or a problem on the right to jump to it."
+        case .export where model.exporting: return "Click the timeline to play from there, even while it exports."
+        default: return "Click the timeline to play from there. Space pauses."
         }
     }
 

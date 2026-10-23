@@ -81,25 +81,26 @@ struct PlayerPane: View {
             }
             .padding(16)
         }
-        .overlay(alignment: .bottomLeading) {
-            HStack(spacing: 10) {
-                Button {
-                    model.togglePlay()
-                } label: {
-                    Image(systemName: model.isPlaying ? "pause.fill" : "play.fill")
-                        .font(.system(size: 16, weight: .bold))
-                        .foregroundStyle(Color(hex: 0x111111))
-                        .frame(width: 44, height: 44)
-                        .background(.white.opacity(0.92), in: Circle())
-                        .contentShape(Circle())
-                }
-                .buttonStyle(.plain)
+        // No play button: the timeline below plays from wherever it's
+        // clicked. Clicking the picture or pressing Space plays and pauses.
+        // (A clear layer on top takes the click; AVKit's view would eat it.)
+        .overlay {
+            Color.clear
+                .contentShape(Rectangle())
+                .onTapGesture { if model.sunday.audioFile != nil { model.togglePlay() } }
+        }
+        .help("Click the timeline to play from there. Click here or press Space to pause.")
+        .background {
+            Button("Play or pause") { model.togglePlay() }
                 .keyboardShortcut(.space, modifiers: [])
-                .help("Play or pause (Space)")
                 .disabled(model.sunday.audioFile == nil)
-                OverlayLabel(text: label)
-            }
-            .padding(16)
+                .opacity(0)
+                .accessibilityHidden(true)
+        }
+        .overlay(alignment: .bottomLeading) {
+            OverlayLabel(text: label)
+                .padding(16)
+                .allowsHitTesting(false)
         }
     }
 

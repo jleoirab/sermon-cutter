@@ -35,7 +35,11 @@ struct ServiceTimelineCard: View {
                     .gesture(
                         DragGesture(minimumDistance: 0)
                             .onChanged { v in drag(v, width: geo.size.width) }
-                            .onEnded { _ in dragging = nil }
+                            .onEnded { _ in
+                                // A click or drag on the band plays from there.
+                                if dragging == .seek { model.play(from: model.playhead) }
+                                dragging = nil
+                            }
                     )
             }
             .frame(height: 100)
@@ -47,7 +51,7 @@ struct ServiceTimelineCard: View {
                     Text("Preacher starts")
                 }
                 Spacer()
-                Text("Drag Start or End. Click anywhere to listen.")
+                Text("Drag Start or End. Click anywhere to play from there.")
                     .lineLimit(1)
                     .truncationMode(.head)
             }
