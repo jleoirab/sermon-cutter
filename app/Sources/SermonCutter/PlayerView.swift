@@ -44,6 +44,7 @@ struct BannerFrame: View {
 /// sound fading in and out.
 struct PlayerPane: View {
     @ObservedObject var model: SundayModel
+    @State private var skipKeys = SkipKeys()
 
     var body: some View {
         ZStack {
@@ -89,7 +90,9 @@ struct PlayerPane: View {
                 .contentShape(Rectangle())
                 .onTapGesture { if model.sunday.audioFile != nil { model.togglePlay() } }
         }
-        .help("Click the timeline to play from there. Click here or press Space to pause.")
+        .help("Click the timeline to play from there. Click here or press Space to pause. ← and → skip 5 seconds.")
+        .onAppear { skipKeys.start { model.skip($0) } }
+        .onDisappear { skipKeys.stop() }
         .background {
             Button("Play or pause") { model.togglePlay() }
                 .keyboardShortcut(.space, modifiers: [])
@@ -107,6 +110,40 @@ struct PlayerPane: View {
     private var label: String {
         if model.playsCut, let len = model.cutLength { return Timecode.format(len) }
         return Timecode.format(model.playhead)
+    }
+}
+
+/// ← and → skip back and forward 5 seconds, as on YouTube. Left alone while
+/// you type in a field (the arrows move the cursor there) or a sheet is open.
+@MainActor
+final class SkipKeys {
+    static let step = 5.0
+    private var monitor: Any?
+
+    func start(_ skip: @escaping @MainActor (Double) -> Void) {
+        stop()
+        monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in
+            let handled = MainActor.assumeIsolated { SkipKeys.handle(event, skip) }
+            return handled ? nil : event
+        }
+    }
+
+    func stop() {
+        if let monitor { NSEvent.removeMonitor(monitor) }
+        monitor = nil
+    }
+
+    private static func handle(_ event: NSEvent, _ skip: @MainActor (Double) -> Void) -> Bool {
+        guard event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty,
+              let window = event.window, !window.isSheet, window.attachedSheet == nil,
+              !(window.firstResponder is NSText)
+        else { return false }
+        switch event.specialKey {
+        case .leftArrow?: skip(-step)
+        case .rightArrow?: skip(step)
+        default: return false
+        }
+        return true
     }
 }
 

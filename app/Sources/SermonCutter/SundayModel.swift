@@ -386,6 +386,14 @@ final class SundayModel: ObservableObject {
         isPlaying = true
     }
 
+    /// Moves the playhead `delta` seconds, playing on if it was playing. On
+    /// Quality and Export it stays inside the cut.
+    func skip(_ delta: Double) {
+        var t = playhead + delta
+        if playsCut, let a = sunday.cutIn, let b = sunday.cutOut { t = min(max(t, a), b) }
+        seek(t)
+    }
+
     func play(from t: Double) {
         seek(t)
         player.play()
