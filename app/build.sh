@@ -142,10 +142,10 @@ FOUND="$(env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin "$H/sermoncut" t
 if echo "$FOUND" | grep -q null; then echo "the engine can't find every helper: $FOUND"; exit 1; fi
 echo "the engine finds every helper inside the app"
 for f in "$OUT/Contents/MacOS/$APP_NAME" "$H"/*; do
-  case " $(lipo -archs "$f" 2>/dev/null) " in
-    *" arm64 "*" x86_64 "*|*" x86_64 "*" arm64 "*) ;;
-    *) echo "$(basename "$f") isn't built for both Apple silicon and Intel ($(lipo -archs "$f" 2>&1))"; exit 1 ;;
-  esac
+  ARCHS=" $(lipo -archs "$f" 2>/dev/null) "
+  if [[ "$ARCHS" != *" arm64 "* || "$ARCHS" != *" x86_64 "* ]]; then
+    echo "$(basename "$f") isn't built for both Apple silicon and Intel ($ARCHS)"; exit 1
+  fi
 done
 echo "every program is built for Apple silicon and Intel"
 echo "app size: $(du -sh "$OUT" | cut -f1)"
