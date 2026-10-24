@@ -36,10 +36,11 @@ swift --version 2>&1 | head -1
 xcode-select -p 2>&1
 
 echo "== engine"
+# rustup's toolchain when there is one: it can also build for Intel Macs.
+if [ -x "$HOME/.cargo/bin/rustup" ]; then export PATH="$HOME/.cargo/bin:$PATH"; fi
 (cd "$ROOT" && cargo build --release >> "$FULL" 2>&1) || { echo "engine build failed:"; grep -E "^error" -A6 "$FULL" | head -60; exit 1; }
 # And for Intel Macs, which needs rustup's toolchain (Homebrew's Rust can't
 # build for another kind of Mac).
-if [ -x "$HOME/.cargo/bin/rustup" ]; then export PATH="$HOME/.cargo/bin:$PATH"; fi
 if command -v rustup >/dev/null 2>&1 && ! rustup target list --installed | grep -qx x86_64-apple-darwin; then
   rustup target add x86_64-apple-darwin >> "$FULL" 2>&1
 fi
