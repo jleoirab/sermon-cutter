@@ -150,6 +150,14 @@ done
 echo "every program is built for Apple silicon and Intel"
 echo "app size: $(du -sh "$OUT" | cut -f1)"
 
+if [ "$RELEASE" = "1" ]; then
+  # A release is for everyone: this Mac gets it the way everyone does, from
+  # Drive through the app's own update, so the installed copy stays as it is.
+  echo "== release"
+  bash "$ROOT/app/package.sh" "$OUT" "$REL" || { echo "the release couldn't be packaged"; exit 1; }
+  exit 0
+fi
+
 # Quit the running copy (under either name) so the new one opens next.
 for NAME in "$APP_NAME" "$OLD_NAME"; do
   if pgrep -f "$NAME.app/Contents/MacOS/" >/dev/null; then
@@ -165,11 +173,6 @@ echo "installed: ~/Applications/$APP_NAME.app"
 # The copy built under the old name goes to the Trash, so there's one app.
 if [ -d "$HOME/Applications/$OLD_NAME.app" ]; then
   mv "$HOME/Applications/$OLD_NAME.app" "$HOME/.Trash/$OLD_NAME $(date +%H%M%S).app" && echo "moved the old $OLD_NAME.app to the Trash"
-fi
-
-if [ "$RELEASE" = "1" ]; then
-  echo "== release"
-  bash "$ROOT/app/package.sh" "$OUT" "$REL" || { echo "the release couldn't be packaged"; exit 1; }
 fi
 
 if [ "${RUN_TESTS:-0}" = "1" ]; then

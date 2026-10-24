@@ -76,7 +76,12 @@ final class Updater: ObservableObject {
         var request = URLRequest(url: manifestURL, cachePolicy: .reloadIgnoringLocalAndRemoteCacheData, timeoutInterval: 20)
         request.setValue("CCI Sermon Cutter/\(currentVersion)", forHTTPHeaderField: "User-Agent")
         do {
-            let (data, _) = try await URLSession.shared.data(for: request)
+            let (data, response) = try await URLSession.shared.data(for: request)
+            // A sign-in page or an error instead of the file: Drive isn't
+            // sharing it (yet), or is busy.
+            guard (response as? HTTPURLResponse)?.statusCode == 200, response.mimeType != "text/html" else {
+                throw URLError(.resourceUnavailable)
+            }
             // Before the first release, latest.json holds only a placeholder.
             guard let m = try? JSONDecoder().decode(UpdateManifest.self, from: data), m.build > currentBuild else {
                 state = userAsked ? .upToDate : .idle
