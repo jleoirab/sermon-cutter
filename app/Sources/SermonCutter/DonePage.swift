@@ -19,6 +19,17 @@ struct DonePage: View {
                     Color.black
                     if playing {
                         PlayerView(player: player, controls: .inline)
+                        // A click on the picture pauses or plays, as in the
+                        // other players; the bottom strip is left to the
+                        // player's own controls (the scrubber).
+                        VStack(spacing: 0) {
+                            Color.clear
+                                .contentShape(Rectangle())
+                                .onTapGesture {
+                                    if player.timeControlStatus == .playing { player.pause() } else { player.play() }
+                                }
+                            Color.clear.frame(height: 56).allowsHitTesting(false)
+                        }
                     } else {
                         if let image = poster ?? model.bannerImage {
                             BannerFrame(image: image)
