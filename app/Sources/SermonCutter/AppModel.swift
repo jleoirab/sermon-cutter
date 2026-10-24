@@ -7,8 +7,10 @@ import SermonCutterCore
 @MainActor
 final class AppModel: ObservableObject {
     @Published var folders: Folders { didSet { saveSettings() } }
-    @Published var modelPath: String { didSet { saveSettings(); rebuildEngine() } }
     @Published var tools: ToolsInfo?
+    /// The last update of the app's own yt-dlp.
+    @Published var ytdlp: YtdlpUpdate?
+    @Published var updatingTools = false
     @Published var streams: [StreamEntry] = []
     @Published var streamsError: String?
     @Published var loadingStreams = false
@@ -25,29 +27,30 @@ final class AppModel: ObservableObject {
     init() {
         let d = UserDefaults.standard
         let std = Folders.standard
+        var work = d.string(forKey: "workFolder").map { URL(fileURLWithPath: $0) } ?? std.work
+        // Downloads used to go to Movies/SermonCutter. Unless someone chose
+        // that folder on purpose, they now live in the app's own folder, and
+        // the Sundays already there move across (nothing else in it does).
+        if work.standardizedFileURL.path == Folders.legacyWork.standardizedFileURL.path {
+            work = std.work
+        }
+        if work.standardizedFileURL.path == std.work.standardizedFileURL.path {
+            Folders.moveSundays(from: Folders.legacyWork, to: std.work)
+        }
         folders = Folders(
-            work: d.string(forKey: "workFolder").map { URL(fileURLWithPath: $0) } ?? std.work,
+            work: work,
             service: d.string(forKey: "serviceFolder").map { URL(fileURLWithPath: $0) } ?? std.service
         )
-        modelPath = d.string(forKey: "modelPath") ?? AppModel.defaultModel(work: std.work)
+        // The speech model is inside the app now; an old setting would only mislead.
+        d.removeObject(forKey: "modelPath")
+        saveSettings()
         rebuildEngine()
-    }
-
-    /// The speech model: the one in the work folder if it's there.
-    static func defaultModel(work: URL) -> String {
-        let candidates = [
-            work.appendingPathComponent("models/ggml-small.en-q8_0.bin"),
-            FileManager.default.homeDirectoryForCurrentUser
-                .appendingPathComponent("Library/Application Support/Sermon Cutter/bin/models/ggml-small.en-q8_0.bin"),
-        ]
-        return (candidates.first { FileManager.default.fileExists(atPath: $0.path) } ?? candidates[0]).path
     }
 
     private func saveSettings() {
         let d = UserDefaults.standard
         d.set(folders.work.path, forKey: "workFolder")
         d.set(folders.service.path, forKey: "serviceFolder")
-        d.set(modelPath, forKey: "modelPath")
     }
 
     private func rebuildEngine() {
@@ -57,16 +60,16 @@ final class AppModel: ObservableObject {
             return
         }
         engineMissing = false
-        engine = Engine(executable: exe, environment: Engine.environment(model: URL(fileURLWithPath: modelPath)))
+        engine = Engine(executable: exe, environment: Engine.environment())
     }
 
     /// For checking the screens without clicking through them: a file named
-    /// ".show" in the work folder holding a YouTube id and a page ("cut",
-    /// "quality", "export", "done", "preview") opens that saved Sunday there,
-    /// "home" goes back Home, and "light", "dark" or "auto" set the
-    /// appearance. The file is removed once it's read.
+    /// ".show" in the app's own folder holding a YouTube id and a page
+    /// ("cut", "quality", "export", "done", "preview") opens that saved
+    /// Sunday there, "home" goes back Home, and "light", "dark" or "auto" set
+    /// the appearance. The file is removed once it's read.
     func watchForShowRequests() async {
-        let file = folders.work.appendingPathComponent(".show")
+        let file = Folders.appSupport.appendingPathComponent(".show")
         while !Task.isCancelled {
             if let text = try? String(contentsOf: file, encoding: .utf8) {
                 try? FileManager.default.removeItem(at: file)
@@ -109,6 +112,27 @@ final class AppModel: ObservableObject {
         guard let engine else { return }
         tools = try? await engine.run(["tools"]).result("tools", as: ToolsInfo.self)
     }
+
+    /// Keeps the app's own copy of yt-dlp: the first time, copies it out of
+    /// the app; about once a day, lets it update itself, since YouTube keeps
+    /// breaking old copies. `force` checks now.
+    func updateTools(force: Bool = false) async {
+        guard let engine, !updatingTools else { return }
+        updatingTools = true
+        defer { updatingTools = false }
+        let d = UserDefaults.standard
+        let last = d.object(forKey: "ytdlpCheckedAt") as? Date
+        let due = force || last.map { Date().timeIntervalSince($0) > 20 * 3600 } ?? true
+        let args = due ? ["update-tools"] : ["update-tools", "--no-update"]
+        if let r = try? await engine.run(args).result("update_tools", as: YtdlpUpdate.self) {
+            ytdlp = r
+            if due && r.problem == nil { d.set(Date(), forKey: "ytdlpCheckedAt") }
+        }
+        await checkTools()
+    }
+
+    /// When yt-dlp last checked for a newer version of itself.
+    var ytdlpCheckedAt: Date? { UserDefaults.standard.object(forKey: "ytdlpCheckedAt") as? Date }
 
     func loadStreams() async {
         guard let engine, !loadingStreams else { return }

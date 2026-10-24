@@ -52,9 +52,10 @@ echo "ok"
 echo "== bundle"
 BIN="$(cd "$ROOT/app" && swift build -c release --show-bin-path)/SermonCutter"
 rm -rf "$OUT"
-mkdir -p "$OUT/Contents/MacOS" "$OUT/Contents/Resources/Fonts"
+mkdir -p "$OUT/Contents/MacOS" "$OUT/Contents/Helpers" "$OUT/Contents/Resources/Fonts"
 cp "$BIN" "$OUT/Contents/MacOS/$APP_NAME"
-cp "$ROOT/target/release/sermoncut" "$OUT/Contents/Resources/sermoncut"
+# The engine sits with the helpers it runs.
+cp "$ROOT/target/release/sermoncut" "$OUT/Contents/Helpers/sermoncut"
 cp "$ROOT/app/Resources/AppIcon.icns" "$OUT/Contents/Resources/AppIcon.icns"
 cp "$ROOT"/app/Resources/Fonts/* "$OUT/Contents/Resources/Fonts/"
 VERSION="$(cd "$ROOT" && git describe --tags --always 2>/dev/null || echo dev)"
@@ -68,7 +69,7 @@ cat > "$OUT/Contents/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key><string>org.ccikw.sermoncutter</string>
   <key>CFBundleExecutable</key><string>$APP_NAME</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.5</string>
+  <key>CFBundleShortVersionString</key><string>0.6</string>
   <key>CFBundleVersion</key><string>$VERSION</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.video</string>
@@ -79,11 +80,28 @@ cat > "$OUT/Contents/Info.plist" <<PLIST
 </dict>
 </plist>
 PLIST
+echo "== helpers"
+# ffmpeg, ffprobe, whisper-cli, deno, yt-dlp and the speech model, inside the app.
+bash "$ROOT/app/tools.sh" "$OUT" || { echo "the helpers couldn't be put in the app"; exit 1; }
+
 # Sign with a stable identity when there is one, so macOS remembers the
 # app's permissions (Documents folder) from one build to the next.
 IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | grep -o '"Sermon Cutter Dev"' | head -1 | tr -d '"')"
 codesign --force --deep --sign "${IDENTITY:--}" "$OUT" >> "$FULL" 2>&1 || echo "(signing failed; the app still runs from this Mac)"
 echo "signed: ${IDENTITY:-ad hoc}"
+
+# Each helper still runs once signed, and the engine finds every one of them
+# inside the app with nothing else on the PATH (no Homebrew).
+echo "== check"
+H="$OUT/Contents/Helpers"
+"$H/ffmpeg" -hide_banner -version | head -1
+echo "yt-dlp $("$H/yt-dlp" --version)"
+"$H/deno" --version | head -1
+"$H/whisper-cli" --help >/dev/null 2>&1 && echo "whisper-cli runs" || { echo "whisper-cli doesn't run"; exit 1; }
+FOUND="$(env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin "$H/sermoncut" tools --tools-dir "$ROOT/build/no-tools")"
+if echo "$FOUND" | grep -q null; then echo "the engine can't find every helper: $FOUND"; exit 1; fi
+echo "the engine finds every helper inside the app"
+echo "app size: $(du -sh "$OUT" | cut -f1)"
 
 # Quit the running copy (under either name) so the new one opens next.
 for NAME in "$APP_NAME" "$OLD_NAME"; do
@@ -95,7 +113,7 @@ for NAME in "$APP_NAME" "$OLD_NAME"; do
 done
 mkdir -p "$HOME/Applications"
 rm -rf "$HOME/Applications/$APP_NAME.app"
-cp -R "$OUT" "$HOME/Applications/"
+cp -cR "$OUT" "$HOME/Applications/" 2>/dev/null || cp -R "$OUT" "$HOME/Applications/"
 echo "installed: ~/Applications/$APP_NAME.app"
 # The copy built under the old name goes to the Trash, so there's one app.
 if [ -d "$HOME/Applications/$OLD_NAME.app" ]; then

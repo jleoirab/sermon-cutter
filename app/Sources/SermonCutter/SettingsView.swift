@@ -1,45 +1,77 @@
 import SwiftUI
 import SermonCutterCore
 
-/// Folders, the speech model, and which tools the engine found.
+/// Folders, and the helpers the app carries.
 struct SettingsView: View {
     @EnvironmentObject var app: AppModel
 
     var body: some View {
         Form {
             Section("Folders") {
+                folderRow("Finished sermons (Service folder)", url: app.folders.service) { app.folders.service = $0 }
                 folderRow("Downloads and work files", url: app.folders.work) { app.folders.work = $0 }
-                folderRow("Service folder (finished sermons)", url: app.folders.service) { app.folders.service = $0 }
             }
-            Section("Speech model") {
-                TextField("Path", text: $app.modelPath)
-                Text(FileManager.default.fileExists(atPath: app.modelPath) ? "Found." : "Not found: put ggml-small.en-q8_0.bin here.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            }
-            Section("Tools") {
+            Section {
                 if let t = app.tools {
                     tool("ffmpeg", t.ffmpeg)
                     tool("ffprobe", t.ffprobe)
-                    tool("yt-dlp", t.ytdlp)
                     tool("Deno", t.deno)
                     tool("whisper.cpp", t.whisper)
                     tool("Speech model", t.whisperModel)
+                    LabeledContent("yt-dlp") {
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text(ytdlpLine(t.ytdlp)).foregroundStyle(t.ytdlp == nil ? Color.red : Color.secondary)
+                            if let problem = app.ytdlp?.problem {
+                                Text("Couldn't check for a newer one: \(problem)")
+                                    .font(.caption).foregroundStyle(.secondary).lineLimit(2)
+                            }
+                        }
+                    }
                 } else {
                     ProgressView().controlSize(.small)
                 }
-                Button("Look again") { Task { await app.checkTools() } }
+                HStack {
+                    Spacer()
+                    if app.updatingTools { ProgressView().controlSize(.small) }
+                    Button("Check for a newer yt-dlp") { Task { await app.updateTools(force: true) } }
+                        .disabled(app.updatingTools)
+                }
+            } header: {
+                Text("Helpers")
+            } footer: {
+                Text("Everything comes with the app. yt-dlp, which downloads from YouTube, keeps itself up to date about once a day, since YouTube changes often.")
+                    .font(.caption).foregroundStyle(.secondary)
             }
         }
         .formStyle(.grouped)
-        .frame(width: 560, height: 520)
+        .frame(width: 560, height: 560)
         .task { await app.checkTools() }
+    }
+
+    /// "Inside the app", "Kept up to date by the app", or the path for a
+    /// helper from anywhere else.
+    private func place(_ path: String) -> String {
+        if let b = app.tools?.bundleDir, path.hasPrefix(b + "/") || path.hasPrefix(Bundle.main.bundlePath + "/") {
+            return "Inside the app"
+        }
+        if let t = app.tools?.toolsDir, path.hasPrefix(t + "/") { return "Kept up to date by the app" }
+        return FolderRow.tilde(path)
+    }
+
+    private func ytdlpLine(_ path: String?) -> String {
+        guard let path else { return "missing" }
+        var parts = [place(path)]
+        if let v = app.ytdlp?.version { parts.append("version \(v)") }
+        if let d = app.ytdlpCheckedAt {
+            parts.append("checked \(d.formatted(.relative(presentation: .named)))")
+        }
+        return parts.joined(separator: " · ")
     }
 
     private func tool(_ name: String, _ path: String?) -> some View {
         LabeledContent(name) {
             if let path {
-                Text(path).font(.caption).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
+                Text(place(path)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
             } else {
                 Text("missing").foregroundStyle(.red)
             }

@@ -26,7 +26,7 @@ use std::path::PathBuf;
     about = "Sermon Cutter engine: fetch a stream, cut the sermon with the Sunday banner and fades, and check the result. Prints JSON lines."
 )]
 struct Cli {
-    /// Folder holding ffmpeg, ffprobe, yt-dlp and deno (default: the app's tools folder).
+    /// The app's folder for helpers it updates (default: ~/Library/Application Support/CCI Sermon Cutter/bin).
     #[arg(long, global = true)]
     tools_dir: Option<PathBuf>,
 
@@ -51,6 +51,14 @@ enum FetchPart {
 enum Command {
     /// Show which ffmpeg, ffprobe, yt-dlp and Deno will be used.
     Tools,
+
+    /// Keep the app's own copy of yt-dlp: copy it out of the app the first
+    /// time (or when the app's is newer), then let yt-dlp update itself.
+    UpdateTools {
+        /// Only make sure the copy is there; don't go online.
+        #[arg(long)]
+        no_update: bool,
+    },
 
     /// List the H.264 encoders that work on this computer, best first.
     Encoders,
@@ -273,6 +281,7 @@ fn measurements(
 fn step_name(c: &Command) -> &'static str {
     match c {
         Command::Tools => "tools",
+        Command::UpdateTools { .. } => "update_tools",
         Command::Encoders => "encoders",
         Command::Info { .. } => "info",
         Command::Streams { .. } => "streams",
@@ -290,6 +299,18 @@ fn run(cli: Cli, sink: &dyn Sink) -> Result<()> {
     match cli.command {
         Command::Tools => {
             sink.emit(Event::result("tools", serde_json::to_value(&tools)?));
+        }
+        Command::UpdateTools { no_update } => {
+            let dir = tools.tools_dir.clone().ok_or_else(|| {
+                anyhow::anyhow!("this system has no folder for the app's helpers")
+            })?;
+            let bundled = tools
+                .bundle_dir
+                .as_ref()
+                .map(|d| d.join(format!("yt-dlp{}", std::env::consts::EXE_SUFFIX)))
+                .filter(|p| p.is_file());
+            let r = sermoncut::tools::update_ytdlp(&dir, bundled.as_deref(), !no_update)?;
+            sink.emit(Event::result("update_tools", serde_json::to_value(r)?));
         }
         Command::Encoders => {
             let list = encoders::available(tools.ffmpeg()?)?;

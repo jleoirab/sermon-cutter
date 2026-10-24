@@ -18,7 +18,14 @@ This is milestones 1 to 3 of the [Sermon Cutter PRD & Design Plan](https://claud
 app/build.sh        # builds the engine and the app, installs ~/Applications/CCI Sermon Cutter.app
 ```
 
-It needs the Xcode Command Line Tools (Swift 5.9 or later), Rust, and for now the tools from Homebrew (`brew install ffmpeg yt-dlp deno whisper-cpp`) plus the speech model (see Settings). The app carries its own fonts (Anton and Lato, both under the SIL Open Font License, in `app/Resources/Fonts`) and icon.
+Building needs the Xcode Command Line Tools (Swift 5.9 or later), Rust and git. The app it makes needs nothing installed on the Mac it runs on: it carries everything inside it.
+
+- **Helpers** (`Contents/Helpers`, next to the engine): ffmpeg and ffprobe (FFmpeg n8.1.3, built from source by `app/tools.sh` with only what comes with macOS, encoding with VideoToolbox; LGPL, no GPL parts), whisper-cli (whisper.cpp v1.9.5, static, Metal shaders inside), Deno 2.9.8 (yt-dlp's JavaScript runtime for YouTube) and yt-dlp.
+- **The speech model** (`Contents/Resources/models/ggml-small.en-q8_0.bin`, 253 MB).
+- **yt-dlp keeps itself current.** YouTube keeps breaking old copies, so the app copies its yt-dlp to `~/Library/Application Support/CCI Sermon Cutter/bin` and lets it update itself about once a day (`sermoncut update-tools`). Everything else changes only with a new build of the app.
+- **Downloads and work files** go to `~/Library/Application Support/CCI Sermon Cutter/Work` (Settings can change it). Sundays started before in `~/Movies/SermonCutter` move there on the first launch; nothing else in that folder is touched.
+
+`app/tools.sh` pins every piece (downloads by SHA-256, sources by git commit) and keeps them in `~/Library/Caches/org.ccikw.sermoncutter.build`, so only the first build is slow (ffmpeg takes a few minutes to build). The app is built for Apple silicon. The app also carries its own fonts (Anton and Lato, both under the SIL Open Font License, in `app/Resources/Fonts`) and icon.
 
 - **Home** leads with this Sunday's stream (the newest Sunday, its 1st service), with Sundays already started beside it and the channel's other recent streams below. Paste any other stream's link in the toolbar. YouTube's titles are read as the sermon and the service ("Your Mountain", "1st service · Oct 11").
 - **Getting ready** downloads the audio, finds the sermon and checks the sound while the video downloads, then checks the picture; each step shows on the right. Everything is cached next to the downloads, so reopening a Sunday is instant.
@@ -29,24 +36,18 @@ It needs the Xcode Command Line Tools (Swift 5.9 or later), Rust, and for now th
   - **3 · Export** writes Service/<date>/<date> Sermon.mp4 (for example "Oct 11th 2026/Oct 11th Sermon.mp4") and self-checks it. Quality and Export show only the cut, with snapshots of the video, and play it with the banner and fades. Going back Home while it exports lets it carry on.
 - **The last page** shows the finished sermon, its self-check, Show in Finder and the note for the leads.
 
-To check a screen without clicking through, put a file named `.show` in the work folder with a YouTube id and a page (`iz0PPVUleUw quality`; pages are cut, quality, export, done and preview), or `home`, `light`, `dark` or `auto`.
+To check a screen without clicking through, put a file named `.show` in `~/Library/Application Support/CCI Sermon Cutter` with a YouTube id and a page (`iz0PPVUleUw quality`; pages are cut, quality, export, done and preview), or `home`, `light`, `dark` or `auto`.
 
-Still to come before the pilot: tools bundled with the app (no Homebrew), Drive upload, and signing.
+Still to come before the pilot: Drive upload, and signing (a Developer ID and Apple's notarization, so other Macs open it without a warning).
 
 macOS asks once for access to Documents (where the Service folder lives). Builds are signed ad hoc, so each rebuild looks like a new app and asks again. To keep the answer across rebuilds, make a self-signed code-signing certificate named "Sermon Cutter Dev" in Keychain Access (Certificate Assistant → Create a Certificate…, type Code Signing); `build.sh` signs with it when it's there.
 
 ## Try it on a Mac
 
 ```bash
-brew install rust ffmpeg yt-dlp deno whisper-cpp
 cargo build --release
-B=./target/release/sermoncut
-
-# The speech model for hearing "please be seated" (264 MB, once).
-mkdir -p ~/Movies/SermonCutter/models
-curl -L -o ~/Movies/SermonCutter/models/ggml-small.en-q8_0.bin \
-  https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en-q8_0.bin
-export SERMONCUT_WHISPER_MODEL=~/Movies/SermonCutter/models/ggml-small.en-q8_0.bin
+# The engine inside the built app finds its helpers next to it; this uses them.
+B="build/CCI Sermon Cutter.app/Contents/Helpers/sermoncut"
 
 $B tools                       # which ffmpeg, ffprobe, yt-dlp, Deno and whisper.cpp it found
 $B encoders                    # expect h264_videotoolbox first
@@ -79,7 +80,8 @@ $B render \
 
 | Command | What it does |
 | --- | --- |
-| `tools` | Shows which ffmpeg, ffprobe, yt-dlp and Deno will be used |
+| `tools` | Shows which ffmpeg, ffprobe, yt-dlp, Deno, whisper.cpp and speech model will be used |
+| `update-tools [--no-update]` | Copies the app's yt-dlp to its Application Support folder (first run, or when the app's is newer) and lets it update itself |
 | `encoders` | Lists the H.264 encoders that work on this computer, best first |
 | `info <url>` | Reads the title, length, live status and best H.264 rendition, without downloading |
 | `fetch <url> [--dir D] [--part audio\|video\|both]` | Downloads the AAC audio, then H.264 video up to 1080p merged to MP4 |

@@ -58,12 +58,57 @@ public struct Folders: Equatable, Sendable {
         self.service = service
     }
 
+    /// The app's own folder: ~/Library/Application Support/CCI Sermon Cutter.
+    public static var appSupport: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent("Library/Application Support/CCI Sermon Cutter")
+    }
+
+    /// Downloads and work files live in the app's own folder; only the
+    /// finished sermon goes somewhere you'd browse.
     public static var standard: Folders {
-        let home = FileManager.default.homeDirectoryForCurrentUser
-        return Folders(
-            work: home.appendingPathComponent("Movies/SermonCutter"),
-            service: home.appendingPathComponent("Documents/CCIKW/Service")
+        Folders(
+            work: appSupport.appendingPathComponent("Work"),
+            service: FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Documents/CCIKW/Service")
         )
+    }
+
+    /// Where downloads went before they moved into the app's own folder.
+    public static var legacyWork: URL {
+        FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent("Movies/SermonCutter")
+    }
+
+    /// Moves every saved Sunday in `old` into `new`: its saved file and its
+    /// downloads and work files (`<id>.*`), pointing the saved paths at the
+    /// new place. Anything else in `old` stays where it is, and nothing in
+    /// `new` is overwritten. Returns how many Sundays moved.
+    @discardableResult
+    public static func moveSundays(from old: URL, to new: URL) -> Int {
+        let fm = FileManager.default
+        let oldPath = old.standardizedFileURL.path, newPath = new.standardizedFileURL.path
+        guard oldPath != newPath, let names = try? fm.contentsOfDirectory(atPath: oldPath) else { return 0 }
+        let ids = names.filter { $0.hasSuffix(".sunday.json") }.map { String($0.dropLast(".sunday.json".count)) }
+        guard !ids.isEmpty, (try? fm.createDirectory(at: new, withIntermediateDirectories: true)) != nil else { return 0 }
+        let dest = Folders(work: new, service: new)
+        var moved = 0
+        for id in ids where !fm.fileExists(atPath: dest.saved(id).path) {
+            for name in names where name.hasPrefix(id + ".") {
+                let to = new.appendingPathComponent(name)
+                if !fm.fileExists(atPath: to.path) {
+                    try? fm.moveItem(at: old.appendingPathComponent(name), to: to)
+                }
+            }
+            guard var sunday = dest.load(id) else { continue }
+            let repoint = { (path: String?) -> String? in
+                guard let path, path.hasPrefix(oldPath + "/") else { return path }
+                return newPath + path.dropFirst(oldPath.count)
+            }
+            sunday.audioFile = repoint(sunday.audioFile)
+            sunday.videoFile = repoint(sunday.videoFile)
+            try? dest.save(sunday)
+            moved += 1
+        }
+        return moved
     }
 
     public func file(_ id: String, _ suffix: String) -> URL {

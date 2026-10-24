@@ -348,6 +348,7 @@ mod tests {
     fn bare_tools() -> Tools {
         Tools {
             tools_dir: None,
+            bundle_dir: None,
             ffmpeg: Some("/opt/ff/ffmpeg".into()),
             ffprobe: None,
             ytdlp: None,

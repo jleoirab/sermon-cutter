@@ -131,8 +131,21 @@ public struct VerifyReport: Codable, Equatable, Sendable {
     public var checks: [VerifyCheck]
 }
 
+/// What `update-tools` did to the app's own copy of yt-dlp.
+public struct YtdlpUpdate: Codable, Equatable, Sendable {
+    public var path: String
+    public var version: String?
+    public var copiedFromApp: Bool
+    public var updated: Bool
+    /// Why it couldn't check for a newer one, when it couldn't.
+    public var problem: String?
+}
+
 public struct ToolsInfo: Codable, Equatable, Sendable {
+    /// The app's folder for the helpers it updates (yt-dlp).
     public var toolsDir: String?
+    /// The helpers inside the app.
+    public var bundleDir: String?
     public var ffmpeg: String?
     public var ffprobe: String?
     public var ytdlp: String?

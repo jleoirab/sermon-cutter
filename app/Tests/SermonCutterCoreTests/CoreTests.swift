@@ -18,6 +18,31 @@ final class CoreTests: XCTestCase {
         XCTAssertNil(Sunday.videoID(from: "hello"))
     }
 
+    func testSundaysMoveIntoTheAppsFolder() throws {
+        let fm = FileManager.default
+        let root = fm.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let old = root.appendingPathComponent("Movies/SermonCutter")
+        let new = root.appendingPathComponent("Library/Application Support/CCI Sermon Cutter/Work")
+        try fm.createDirectory(at: old.appendingPathComponent("models"), withIntermediateDirectories: true)
+        defer { try? fm.removeItem(at: root) }
+        var s = Sunday(url: "https://www.youtube.com/watch?v=iz0PPVUleUw")
+        s.audioFile = old.appendingPathComponent("iz0PPVUleUw.audio.m4a").path
+        s.bannerPath = "/Users/me/Documents/CCIKW/Service/banner.png"
+        try Folders(work: old, service: old).save(s)
+        for name in ["iz0PPVUleUw.audio.m4a", "iz0PPVUleUw.video.mp4.part", "Oct 11 test.mp4", "models/model.bin"] {
+            try Data("x".utf8).write(to: old.appendingPathComponent(name))
+        }
+        XCTAssertEqual(Folders.moveSundays(from: old, to: new), 1)
+        let moved = try XCTUnwrap(Folders(work: new, service: new).load("iz0PPVUleUw"))
+        XCTAssertEqual(moved.audioFile, new.appendingPathComponent("iz0PPVUleUw.audio.m4a").path)
+        XCTAssertEqual(moved.bannerPath, s.bannerPath)
+        XCTAssertTrue(fm.fileExists(atPath: new.appendingPathComponent("iz0PPVUleUw.video.mp4.part").path))
+        // What isn't a Sunday's stays put.
+        XCTAssertTrue(fm.fileExists(atPath: old.appendingPathComponent("Oct 11 test.mp4").path))
+        XCTAssertTrue(fm.fileExists(atPath: old.appendingPathComponent("models/model.bin").path))
+        XCTAssertEqual(Folders.moveSundays(from: old, to: new), 0)
+    }
+
     func testDriveLinks() {
         XCTAssertEqual(DriveLink.fileID("https://drive.google.com/file/d/1AbC_x-9/view?usp=sharing"), "1AbC_x-9")
         XCTAssertEqual(DriveLink.fileID("https://drive.google.com/open?id=1AbC"), "1AbC")

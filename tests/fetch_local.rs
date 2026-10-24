@@ -29,7 +29,7 @@ fn free_port() -> u16 {
 #[test]
 fn downloads_a_file_and_reports_where_it_went() {
     let tools = Tools::locate(None);
-    let python = sermoncut::tools::find(&["python3"], "SERMONCUT_TEST_PYTHON", None);
+    let python = sermoncut::tools::find(&["python3"], "SERMONCUT_TEST_PYTHON", &[]);
     let (Some(ffmpeg), Some(_), Some(python)) = (tools.ffmpeg.clone(), tools.ytdlp.clone(), python)
     else {
         return eprintln!("skipped: needs yt-dlp, ffmpeg and python3");

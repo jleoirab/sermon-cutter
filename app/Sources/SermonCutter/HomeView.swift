@@ -439,9 +439,9 @@ struct ToolsWarning: View {
                 .font(.system(size: 18, weight: .semibold))
                 .foregroundStyle(Brand.warnFg)
             VStack(alignment: .leading, spacing: 4) {
-                Text("A few helpers are missing: \(missing.joined(separator: ", "))")
+                Text("Some of the app's helpers are missing: \(missing.joined(separator: ", "))")
                     .font(Brand.lato(14, .black))
-                Text("Until CCI Sermon Cutter installs them itself, they come from Homebrew. In Terminal: brew install ffmpeg yt-dlp deno whisper-cpp. The speech model goes in Settings.")
+                Text("They come inside CCI Sermon Cutter, so this copy of the app is incomplete. Install it again.")
                     .font(Brand.lato(13))
             }
             .foregroundStyle(Brand.warnFg)

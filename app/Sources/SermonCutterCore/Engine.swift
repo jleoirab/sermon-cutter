@@ -68,12 +68,15 @@ public final class Engine: @unchecked Sendable {
         self.environment = environment
     }
 
-    /// The engine inside the app bundle, or one named by SERMONCUT_ENGINE.
+    /// The engine inside the app bundle (Contents/Helpers, beside the tools
+    /// it runs), or one named by SERMONCUT_ENGINE.
     public static func locate(bundle: Bundle = .main) -> URL? {
         let fm = FileManager.default
         if let env = ProcessInfo.processInfo.environment["SERMONCUT_ENGINE"], fm.isExecutableFile(atPath: env) {
             return URL(fileURLWithPath: env)
         }
+        let helper = bundle.bundleURL.appendingPathComponent("Contents/Helpers/sermoncut")
+        if fm.isExecutableFile(atPath: helper.path) { return helper }
         if let r = bundle.url(forResource: "sermoncut", withExtension: nil), fm.isExecutableFile(atPath: r.path) {
             return r
         }
@@ -81,16 +84,15 @@ public final class Engine: @unchecked Sendable {
         return fm.isExecutableFile(atPath: dev.path) ? dev : nil
     }
 
-    /// The environment for the engine: the app's own, plus Homebrew on the
-    /// PATH (apps opened from the Finder don't get the shell's PATH) and the
-    /// speech model when one is set.
-    public static func environment(model: URL?) -> [String: String] {
+    /// The environment for the engine: the app's own, with only macOS's own
+    /// folders on the PATH. Every helper and the speech model come from
+    /// inside the app (yt-dlp from the app's folder once it has updated), so
+    /// nothing installed elsewhere, like Homebrew, gets picked up by chance.
+    public static func environment() -> [String: String] {
         var env = ProcessInfo.processInfo.environment
-        let extra = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin", "/bin", "/usr/sbin", "/sbin"]
-        let path = (env["PATH"] ?? "").split(separator: ":").map(String.init)
-        env["PATH"] = (extra + path.filter { !extra.contains($0) }).joined(separator: ":")
-        if let model, FileManager.default.fileExists(atPath: model.path) {
-            env["SERMONCUT_WHISPER_MODEL"] = model.path
+        env["PATH"] = "/usr/bin:/bin:/usr/sbin:/sbin"
+        for key in env.keys where key.hasPrefix("SERMONCUT_") && key != "SERMONCUT_ENGINE" {
+            env[key] = nil
         }
         return env
     }
