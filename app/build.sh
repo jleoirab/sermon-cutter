@@ -36,19 +36,12 @@ swift --version 2>&1 | head -1
 xcode-select -p 2>&1
 
 echo "== engine"
-# rustup's toolchain when there is one: it can also build for Intel Macs.
-if [ -x "$HOME/.cargo/bin/rustup" ]; then export PATH="$HOME/.cargo/bin:$PATH"; fi
+# A Rust toolchain kept in the build cache, which builds for both kinds of
+# Mac (app/rust-toolchain.sh); Homebrew's only builds for this one.
+RUST_BIN="$(bash "$ROOT/app/rust-toolchain.sh")" || { echo "couldn't get the Rust toolchain"; exit 1; }
+export PATH="$RUST_BIN:$PATH" RUSTC="$RUST_BIN/rustc"
 (cd "$ROOT" && cargo build --release >> "$FULL" 2>&1) || { echo "engine build failed:"; grep -E "^error" -A6 "$FULL" | head -60; exit 1; }
-# And for Intel Macs: with rustup, its standard library for Intel; with
-# Homebrew's Rust, the same one kept in the build cache (app/rust-intel.sh).
-INTEL_FLAGS=""
-if command -v rustup >/dev/null 2>&1; then
-  rustup target list --installed | grep -qx x86_64-apple-darwin || rustup target add x86_64-apple-darwin >> "$FULL" 2>&1
-else
-  SYSROOT="$(bash "$ROOT/app/rust-intel.sh")" || { echo "couldn't get Rust's standard library for Intel Macs"; exit 1; }
-  INTEL_FLAGS="--sysroot=$SYSROOT"
-fi
-(cd "$ROOT" && RUSTFLAGS="$INTEL_FLAGS" cargo build --release --target x86_64-apple-darwin >> "$FULL" 2>&1) ||
+(cd "$ROOT" && cargo build --release --target x86_64-apple-darwin >> "$FULL" 2>&1) ||
   { echo "the engine didn't build for Intel Macs:"; grep -E "^error" -A6 "$FULL" | head -30; exit 1; }
 echo "ok"
 
