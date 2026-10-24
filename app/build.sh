@@ -97,7 +97,14 @@ H="$OUT/Contents/Helpers"
 "$H/ffmpeg" -hide_banner -version | head -1
 echo "yt-dlp $("$H/yt-dlp" --version)"
 "$H/deno" --version | head -1
-"$H/whisper-cli" --help >/dev/null 2>&1 && echo "whisper-cli runs" || { echo "whisper-cli doesn't run"; exit 1; }
+# whisper-cli loads the speech model and listens to two seconds of silence.
+SILENCE="$ROOT/build/silence.wav"
+"$H/ffmpeg" -hide_banner -loglevel error -y -f lavfi -i anullsrc=r=16000:cl=mono -t 2 -c:a pcm_s16le "$SILENCE"
+if "$H/whisper-cli" -m "$OUT/Contents/Resources/models/ggml-small.en-q8_0.bin" -f "$SILENCE" -np -nt >/dev/null 2>"$ROOT/build/whisper-check.log"; then
+  echo "whisper-cli runs with the speech model"
+else
+  echo "whisper-cli can't use the speech model:"; tail -5 "$ROOT/build/whisper-check.log"; exit 1
+fi
 FOUND="$(env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin "$H/sermoncut" tools --tools-dir "$ROOT/build/no-tools")"
 if echo "$FOUND" | grep -q null; then echo "the engine can't find every helper: $FOUND"; exit 1; fi
 echo "the engine finds every helper inside the app"

@@ -1,133 +1,93 @@
+import AppKit
 import SwiftUI
 import SermonCutterCore
 
-/// Folders, and the helpers the app carries.
+/// Settings, in the app's own look: where the finished sermons go, and the
+/// folder the app works in. The helpers the app carries look after
+/// themselves, so they aren't shown.
 struct SettingsView: View {
     @EnvironmentObject var app: AppModel
 
     var body: some View {
-        Form {
-            Section("Folders") {
-                folderRow("Finished sermons (Service folder)", url: app.folders.service) { app.folders.service = $0 }
-                folderRow("Downloads and work files", url: app.folders.work) { app.folders.work = $0 }
-            }
-            Section {
-                if let t = app.tools {
-                    tool("ffmpeg", t.ffmpeg)
-                    tool("ffprobe", t.ffprobe)
-                    tool("Deno", t.deno)
-                    tool("whisper.cpp", t.whisper)
-                    tool("Speech model", t.whisperModel)
-                    LabeledContent("yt-dlp") {
-                        VStack(alignment: .trailing, spacing: 2) {
-                            Text(ytdlpLine(t.ytdlp)).foregroundStyle(t.ytdlp == nil ? Color.red : Color.secondary)
-                            if let problem = app.ytdlp?.problem {
-                                Text("Couldn't check for a newer one: \(problem)")
-                                    .font(.caption).foregroundStyle(.secondary).lineLimit(2)
-                            }
-                        }
-                    }
-                } else {
-                    ProgressView().controlSize(.small)
-                }
-                HStack {
-                    Spacer()
-                    if app.updatingTools { ProgressView().controlSize(.small) }
-                    Button("Check for a newer yt-dlp") { Task { await app.updateTools(force: true) } }
-                        .disabled(app.updatingTools)
-                }
-            } header: {
-                Text("Helpers")
-            } footer: {
-                Text("Everything comes with the app. yt-dlp, which downloads from YouTube, keeps itself up to date about once a day, since YouTube changes often.")
-                    .font(.caption).foregroundStyle(.secondary)
-            }
+        VStack(alignment: .leading, spacing: 16) {
+            Text("SETTINGS").font(Brand.anton(32))
+            FolderCard(
+                title: "Finished sermons",
+                detail: "Each Sunday gets its own folder here, like “Oct 11th 2026”, with the sermon inside.",
+                url: app.folders.service
+            ) { app.folders.service = $0 }
+            FolderCard(
+                title: "Downloads and work files",
+                detail: "Each stream's sound and video while you work on it. The app keeps them in its own folder; there's no need to change this.",
+                url: app.folders.work
+            ) { app.folders.work = $0 }
+            Spacer(minLength: 0)
+            Text(version)
+                .font(Brand.lato(12))
+                .foregroundStyle(Brand.text2)
         }
-        .formStyle(.grouped)
-        .frame(width: 560, height: 560)
-        .task { await app.checkTools() }
+        .padding(28)
+        .frame(width: 560, height: 470, alignment: .topLeading)
+        .background(Brand.paper)
+        .font(Brand.lato(14))
+        .foregroundStyle(Brand.text)
     }
 
-    /// "Inside the app", "Kept up to date by the app", or the path for a
-    /// helper from anywhere else.
-    private func place(_ path: String) -> String {
-        if let b = app.tools?.bundleDir, path.hasPrefix(b + "/") || path.hasPrefix(Bundle.main.bundlePath + "/") {
-            return "Inside the app"
-        }
-        if let t = app.tools?.toolsDir, path.hasPrefix(t + "/") { return "Kept up to date by the app" }
-        return FolderRow.tilde(path)
-    }
-
-    private func ytdlpLine(_ path: String?) -> String {
-        guard let path else { return "missing" }
-        var parts = [place(path)]
-        if let v = app.ytdlp?.version { parts.append("version \(v)") }
-        if let d = app.ytdlpCheckedAt {
-            parts.append("checked \(d.formatted(.relative(presentation: .named)))")
-        }
-        return parts.joined(separator: " · ")
-    }
-
-    private func tool(_ name: String, _ path: String?) -> some View {
-        LabeledContent(name) {
-            if let path {
-                Text(place(path)).foregroundStyle(.secondary).lineLimit(1).truncationMode(.middle)
-            } else {
-                Text("missing").foregroundStyle(.red)
-            }
-        }
-    }
-
-    private func folderRow(_ label: String, url: URL, set: @escaping (URL) -> Void) -> some View {
-        FolderRow(label: label, url: url, set: set)
+    private var version: String {
+        let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
+        return "CCI Sermon Cutter" + (v.map { " \($0)" } ?? "")
     }
 }
 
-/// A folder as an editable path, with a Change… button for the usual picker.
-struct FolderRow: View {
-    let label: String
+/// One folder: its name and where it is, Show in Finder and Change.
+struct FolderCard: View {
+    let title: String
+    let detail: String
     let url: URL
     let set: (URL) -> Void
-    @State private var text = ""
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 4) {
-            Text(label)
-            HStack {
-                TextField("Folder", text: $text)
-                    .onSubmit(commit)
-                    .font(.callout)
-                Button("Change…") {
-                    let panel = NSOpenPanel()
-                    panel.canChooseDirectories = true
-                    panel.canChooseFiles = false
-                    panel.canCreateDirectories = true
-                    panel.directoryURL = url
-                    if panel.runModal() == .OK, let u = panel.url { set(u) }
+        VStack(alignment: .leading, spacing: 10) {
+            Eyebrow(title)
+            HStack(spacing: 12) {
+                Image(systemName: "folder.fill")
+                    .font(.system(size: 18))
+                    .foregroundStyle(Brand.coral)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(url.lastPathComponent)
+                        .font(Brand.lato(15, .black))
+                        .lineLimit(1)
+                    Text(FolderCard.tilde(url.deletingLastPathComponent().path))
+                        .font(Brand.lato(12))
+                        .foregroundStyle(Brand.text2)
+                        .lineLimit(1)
+                        .truncationMode(.middle)
                 }
+                Spacer(minLength: 8)
+                Button("Show in Finder") { NSWorkspace.shared.activateFileViewerSelecting([url]) }
+                    .buttonStyle(LinkButtonStyle())
+                    .disabled(!FileManager.default.fileExists(atPath: url.path))
+                Button("Change") { choose() }
+                    .buttonStyle(PillButtonStyle(kind: .outline, size: .small))
             }
+            .well()
+            Text(detail)
+                .font(Brand.lato(12))
+                .foregroundStyle(Brand.text2)
+                .fixedSize(horizontal: false, vertical: true)
         }
-        .onAppear { text = FolderRow.tilde(url.path) }
-        .onChange(of: url) { _, u in
-            let t = FolderRow.tilde(u.path)
-            if t != text { text = t }
-        }
-        .onChange(of: text) { _, t in
-            // Take a pasted or typed path as soon as its parent folder exists.
-            let path = (t as NSString).expandingTildeInPath
-            let parent = (path as NSString).deletingLastPathComponent
-            var isDir: ObjCBool = false
-            if path != url.path, path.hasPrefix("/"),
-               FileManager.default.fileExists(atPath: parent, isDirectory: &isDir), isDir.boolValue {
-                set(URL(fileURLWithPath: path, isDirectory: true))
-            }
-        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card(radius: 20, padding: 18)
     }
 
-    private func commit() {
-        let path = (text as NSString).expandingTildeInPath
-        guard !path.isEmpty else { return }
-        set(URL(fileURLWithPath: path, isDirectory: true))
+    private func choose() {
+        let panel = NSOpenPanel()
+        panel.canChooseDirectories = true
+        panel.canChooseFiles = false
+        panel.canCreateDirectories = true
+        panel.prompt = "Choose"
+        panel.directoryURL = url
+        if panel.runModal() == .OK, let u = panel.url { set(u) }
     }
 
     static func tilde(_ path: String) -> String {

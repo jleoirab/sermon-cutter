@@ -131,8 +131,6 @@ final class AppModel: ObservableObject {
         await checkTools()
     }
 
-    /// When yt-dlp last checked for a newer version of itself.
-    var ytdlpCheckedAt: Date? { UserDefaults.standard.object(forKey: "ytdlpCheckedAt") as? Date }
 
     func loadStreams() async {
         guard let engine, !loadingStreams else { return }

@@ -14,6 +14,8 @@ struct PlayerView: NSViewRepresentable {
         v.controlsStyle = controls
         v.showsFullScreenToggleButton = controls != .none
         v.videoGravity = .resizeAspect
+        // No Live Text button over the picture: the player stays clear.
+        v.allowsVideoFrameAnalysis = false
         return v
     }
 
