@@ -8,7 +8,8 @@
 # and whisper.cpp are built here from source for Apple silicon, using only
 # what comes with macOS (VideoToolbox, Metal, Accelerate), so the app needs
 # nothing installed on the Mac it runs on, Homebrew included. ffmpeg is
-# built without GPL parts (it encodes with VideoToolbox), under the LGPL.
+# built without GPL parts (it encodes with VideoToolbox), under the LGPL,
+# and without iconv (only for subtitle text, which the app never reads).
 #
 # Everything is kept in a cache outside the repo, so this is slow only the
 # first time (building ffmpeg takes a few minutes) or after a version here
@@ -88,7 +89,7 @@ ffmpeg_tools() {
   if ! (cd "$src" &&
     ./configure --disable-autodetect \
       --enable-videotoolbox --enable-audiotoolbox --enable-securetransport \
-      --enable-zlib --enable-bzlib --enable-iconv \
+      --enable-zlib --enable-bzlib \
       --disable-doc --disable-ffplay --disable-debug \
       --extra-cflags="-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
       --extra-ldflags="-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" &&
