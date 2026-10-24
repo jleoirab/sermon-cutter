@@ -108,7 +108,8 @@ nasm_bin() {
 }
 
 ffmpeg_arch() {
-  local arch="$1" dir="$CACHE/ffmpeg-$FFMPEG_TAG/$arch"
+  local arch="$1"
+  local dir="$CACHE/ffmpeg-$FFMPEG_TAG/$arch"
   if [ -x "$dir/ffmpeg" ] && [ -x "$dir/ffprobe" ]; then return 0; fi
   echo "   building ffmpeg $FFMPEG_TAG for $arch (a few minutes, once)"
   local src="$CACHE/src-ffmpeg-$arch" log="$CACHE/ffmpeg-$arch.log" extra=() nasm
@@ -178,7 +179,8 @@ cmake_bin() {
 }
 
 whisper_arch() {
-  local arch="$1" dir="$CACHE/whisper-$WHISPER_TAG/$arch"
+  local arch="$1"
+  local dir="$CACHE/whisper-$WHISPER_TAG/$arch"
   if [ -x "$dir/whisper-cli" ]; then return 0; fi
   echo "   building whisper.cpp $WHISPER_TAG for $arch"
   local src="$CACHE/src-whisper-$arch" log="$CACHE/whisper-$arch.log" cm cpu=()
