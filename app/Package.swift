@@ -16,6 +16,12 @@ let package = Package(
             dependencies: ["SermonCutterCore"],
             path: "Sources/SermonCutter"
         ),
+        // For releasing: the release key, and latest.json for a new installer.
+        .executableTarget(
+            name: "SermonRelease",
+            dependencies: ["SermonCutterCore"],
+            path: "Sources/SermonRelease"
+        ),
         .testTarget(
             name: "SermonCutterCoreTests",
             dependencies: ["SermonCutterCore"],

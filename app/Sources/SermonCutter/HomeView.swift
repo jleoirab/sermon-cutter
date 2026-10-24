@@ -6,12 +6,16 @@ import SermonCutterCore
 /// can be pasted in the toolbar.
 struct HomeView: View {
     @EnvironmentObject var app: AppModel
+    @EnvironmentObject var updater: Updater
     @State private var showAll = false
     @State private var refreshNote: (text: String, failed: Bool)?
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: 28) {
+                if updater.showsBanner {
+                    UpdateBanner()
+                }
                 if let tools = app.tools, !tools.missing.isEmpty {
                     ToolsWarning(missing: tools.missing)
                 }

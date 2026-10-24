@@ -43,6 +43,36 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(Folders.moveSundays(from: old, to: new), 0)
     }
 
+    func testUpdatesOnlyInstallWhatTheReleaseKeySigned() throws {
+        let key = ReleaseKey.newPrivateKey()
+        let pub = try ReleaseKey.publicKey(forPrivate: key)
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        try Data("installer".utf8).write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let sha = try ReleaseKey.sha256(of: file)
+        var m = UpdateManifest(
+            version: "0.8", build: 50, minimumMacOS: "14.0", notes: nil,
+            download: URL(string: "https://example.com/x.dmg")!, size: 9, sha256: sha,
+            signature: try ReleaseKey.sign(build: 50, sha256: sha, privateKey: key)
+        )
+        XCTAssertNoThrow(try ReleaseKey.verify(file, against: m, publicKey: pub))
+        // Someone else's key, a changed build number, or a changed file all fail.
+        let other = try ReleaseKey.publicKey(forPrivate: ReleaseKey.newPrivateKey())
+        XCTAssertThrowsError(try ReleaseKey.verify(file, against: m, publicKey: other))
+        m.build = 51
+        XCTAssertThrowsError(try ReleaseKey.verify(file, against: m, publicKey: pub))
+        m.build = 50
+        try Data("installeR".utf8).write(to: file)
+        XCTAssertThrowsError(try ReleaseKey.verify(file, against: m, publicKey: pub))
+        XCTAssertThrowsError(try ReleaseKey.verify(file, against: m, publicKey: nil))
+
+        XCTAssertTrue(m.runs(on: OperatingSystemVersion(majorVersion: 14, minorVersion: 0, patchVersion: 0)))
+        m.minimumMacOS = "15.2"
+        XCTAssertFalse(m.runs(on: OperatingSystemVersion(majorVersion: 15, minorVersion: 1, patchVersion: 9)))
+        XCTAssertTrue(m.runs(on: OperatingSystemVersion(majorVersion: 26, minorVersion: 0, patchVersion: 0)))
+        XCTAssertEqual(m.minimumMacOSName, "macOS 15.2")
+    }
+
     func testDriveLinks() {
         XCTAssertEqual(DriveLink.fileID("https://drive.google.com/file/d/1AbC_x-9/view?usp=sharing"), "1AbC_x-9")
         XCTAssertEqual(DriveLink.fileID("https://drive.google.com/open?id=1AbC"), "1AbC")

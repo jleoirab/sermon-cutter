@@ -9,3 +9,4 @@ target/
 /.build-diagnose
 /.sample.txt
 /.show
+/.release

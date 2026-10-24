@@ -1,8 +1,14 @@
 #!/bin/bash
-# Builds the engine and the Mac app, and installs "CCI Sermon Cutter.app" in
-# ~/Applications. Run from anywhere: app/build.sh
+# Builds the engine and the Mac app, for Apple silicon and Intel Macs, and
+# installs "CCI Sermon Cutter.app" in ~/Applications. Run from anywhere:
+#   app/build.sh
+# A release (app/release.sh, or a file named .release in the repo) also makes
+# the installer and latest.json, ready to put on Google Drive.
 set -uo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+RELEASE="${RELEASE:-0}"
+if [ -e "$ROOT/.release" ]; then rm -f "$ROOT/.release"; RELEASE=1; fi
+source "$ROOT/app/release.conf"
 APP_NAME="CCI Sermon Cutter"
 # What the app was called before; an old copy is quit and moved to the Trash.
 OLD_NAME="Sermon Cutter"
@@ -31,6 +37,12 @@ xcode-select -p 2>&1
 
 echo "== engine"
 (cd "$ROOT" && cargo build --release >> "$FULL" 2>&1) || { echo "engine build failed:"; grep -E "^error" -A6 "$FULL" | head -60; exit 1; }
+# And for Intel Macs.
+if command -v rustup >/dev/null 2>&1 && ! rustup target list --installed | grep -qx x86_64-apple-darwin; then
+  rustup target add x86_64-apple-darwin >> "$FULL" 2>&1
+fi
+(cd "$ROOT" && cargo build --release --target x86_64-apple-darwin >> "$FULL" 2>&1) ||
+  { echo "the engine didn't build for Intel Macs (it needs: rustup target add x86_64-apple-darwin):"; grep -E "^error" -A6 "$FULL" | head -30; exit 1; }
 echo "ok"
 
 # A timing request: time the export's ffmpeg command instead of building the app.
@@ -41,7 +53,9 @@ if [ -e "$ROOT/.bench" ]; then
 fi
 
 echo "== app"
-if ! (cd "$ROOT/app" && swift build -c release >> "$FULL" 2>&1); then
+X86="x86_64-apple-macosx14.0"
+if ! (cd "$ROOT/app" && swift build -c release >> "$FULL" 2>&1 &&
+      swift build -c release --triple "$X86" --product SermonCutter >> "$FULL" 2>&1); then
   echo "app build failed:"
   grep -E "error:" -A3 "$FULL" | grep -v "xcrun: error: unable to lookup item" | head -150
   exit 1
@@ -50,15 +64,30 @@ grep -E "warning:" "$FULL" | grep -v "^ld: warning" | sort -u | head -40
 echo "ok"
 
 echo "== bundle"
-BIN="$(cd "$ROOT/app" && swift build -c release --show-bin-path)/SermonCutter"
+BINS="$(cd "$ROOT/app" && swift build -c release --show-bin-path)"
+BIN_X86="$(cd "$ROOT/app" && swift build -c release --triple "$X86" --show-bin-path)/SermonCutter"
 rm -rf "$OUT"
 mkdir -p "$OUT/Contents/MacOS" "$OUT/Contents/Helpers" "$OUT/Contents/Resources/Fonts"
-cp "$BIN" "$OUT/Contents/MacOS/$APP_NAME"
+lipo -create "$BINS/SermonCutter" "$BIN_X86" -output "$OUT/Contents/MacOS/$APP_NAME"
 # The engine sits with the helpers it runs.
-cp "$ROOT/target/release/sermoncut" "$OUT/Contents/Helpers/sermoncut"
+lipo -create "$ROOT/target/release/sermoncut" "$ROOT/target/x86_64-apple-darwin/release/sermoncut" \
+  -output "$OUT/Contents/Helpers/sermoncut"
 cp "$ROOT/app/Resources/AppIcon.icns" "$OUT/Contents/Resources/AppIcon.icns"
 cp "$ROOT"/app/Resources/Fonts/* "$OUT/Contents/Resources/Fonts/"
-VERSION="$(cd "$ROOT" && git describe --tags --always 2>/dev/null || echo dev)"
+# 0.7 as people see it; the build number counts commits, so it only goes up.
+SHORT_VERSION="$(tr -d ' \n' < "$ROOT/app/VERSION")"
+BUILD_NUMBER="$(cd "$ROOT" && git rev-list --count HEAD)"
+# The release key signs each installer; the app checks updates with its
+# public half. The private half stays in this Mac's keychain.
+REL="$BINS/SermonRelease"
+KEY_SERVICE="CCI Sermon Cutter release key"
+if ! RELEASE_KEY="$(security find-generic-password -a release -s "$KEY_SERVICE" -w 2>/dev/null)"; then
+  RELEASE_KEY="$("$REL" new-key)"
+  security add-generic-password -a release -s "$KEY_SERVICE" -w "$RELEASE_KEY" -T /usr/bin/security
+  echo "made a new release key, kept in this Mac's keychain as \"$KEY_SERVICE\""
+fi
+PUBLIC_KEY="$(printf %s "$RELEASE_KEY" | "$REL" public-key)"
+MANIFEST_URL="https://drive.usercontent.google.com/download?id=$MANIFEST_ID&amp;export=download&amp;confirm=t"
 cat > "$OUT/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -69,8 +98,10 @@ cat > "$OUT/Contents/Info.plist" <<PLIST
   <key>CFBundleIdentifier</key><string>org.ccikw.sermoncutter</string>
   <key>CFBundleExecutable</key><string>$APP_NAME</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>0.6</string>
-  <key>CFBundleVersion</key><string>$VERSION</string>
+  <key>CFBundleShortVersionString</key><string>$SHORT_VERSION</string>
+  <key>CFBundleVersion</key><string>$BUILD_NUMBER</string>
+  <key>SCUpdateManifestURL</key><string>$MANIFEST_URL</string>
+  <key>SCUpdatePublicKey</key><string>$PUBLIC_KEY</string>
   <key>LSMinimumSystemVersion</key><string>14.0</string>
   <key>LSApplicationCategoryType</key><string>public.app-category.video</string>
   <key>NSHighResolutionCapable</key><true/>
@@ -84,11 +115,13 @@ echo "== helpers"
 # ffmpeg, ffprobe, whisper-cli, deno, yt-dlp and the speech model, inside the app.
 bash "$ROOT/app/tools.sh" "$OUT" || { echo "the helpers couldn't be put in the app"; exit 1; }
 
-# Sign with a stable identity when there is one, so macOS remembers the
-# app's permissions (Documents folder) from one build to the next.
-IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | grep -o '"Sermon Cutter Dev"' | head -1 | tr -d '"')"
+# Sign with a stable identity, so macOS remembers the app's permissions
+# (Documents folder) from one version to the next. A release makes the free,
+# self-made one ("Sermon Cutter Dev") the first time.
+if [ "$RELEASE" = "1" ]; then bash "$ROOT/app/signing-identity.sh" || echo "(couldn't make the signing certificate; signing ad hoc)"; fi
+IDENTITY="$(security find-identity -p codesigning 2>/dev/null | grep '"Sermon Cutter Dev"' | head -1 | awk '{print $2}')"
 codesign --force --deep --sign "${IDENTITY:--}" "$OUT" >> "$FULL" 2>&1 || echo "(signing failed; the app still runs from this Mac)"
-echo "signed: ${IDENTITY:-ad hoc}"
+echo "signed: ${IDENTITY:+Sermon Cutter Dev}${IDENTITY:-ad hoc}; version $SHORT_VERSION (build $BUILD_NUMBER)"
 
 # Each helper still runs once signed, and the engine finds every one of them
 # inside the app with nothing else on the PATH (no Homebrew).
@@ -108,6 +141,13 @@ fi
 FOUND="$(env -i HOME="$HOME" PATH=/usr/bin:/bin:/usr/sbin:/sbin "$H/sermoncut" tools --tools-dir "$ROOT/build/no-tools")"
 if echo "$FOUND" | grep -q null; then echo "the engine can't find every helper: $FOUND"; exit 1; fi
 echo "the engine finds every helper inside the app"
+for f in "$OUT/Contents/MacOS/$APP_NAME" "$H"/*; do
+  case " $(lipo -archs "$f" 2>/dev/null) " in
+    *" arm64 "*" x86_64 "*|*" x86_64 "*" arm64 "*) ;;
+    *) echo "$(basename "$f") isn't built for both Apple silicon and Intel ($(lipo -archs "$f" 2>&1))"; exit 1 ;;
+  esac
+done
+echo "every program is built for Apple silicon and Intel"
 echo "app size: $(du -sh "$OUT" | cut -f1)"
 
 # Quit the running copy (under either name) so the new one opens next.
@@ -125,6 +165,11 @@ echo "installed: ~/Applications/$APP_NAME.app"
 # The copy built under the old name goes to the Trash, so there's one app.
 if [ -d "$HOME/Applications/$OLD_NAME.app" ]; then
   mv "$HOME/Applications/$OLD_NAME.app" "$HOME/.Trash/$OLD_NAME $(date +%H%M%S).app" && echo "moved the old $OLD_NAME.app to the Trash"
+fi
+
+if [ "$RELEASE" = "1" ]; then
+  echo "== release"
+  bash "$ROOT/app/package.sh" "$OUT" "$REL" || { echo "the release couldn't be packaged"; exit 1; }
 fi
 
 if [ "${RUN_TESTS:-0}" = "1" ]; then

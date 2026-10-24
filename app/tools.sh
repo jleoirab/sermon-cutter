@@ -4,27 +4,32 @@
 # fills Contents/Helpers (ffmpeg, ffprobe, whisper-cli, deno, yt-dlp) and
 # Contents/Resources/models.
 #
-# Every piece is pinned: downloads by SHA-256, sources by git commit. ffmpeg
-# and whisper.cpp are built here from source for Apple silicon, using only
-# what comes with macOS (VideoToolbox, Metal, Accelerate), so the app needs
-# nothing installed on the Mac it runs on, Homebrew included. ffmpeg is
-# built without GPL parts (it encodes with VideoToolbox), under the LGPL,
-# and without iconv (only for subtitle text, which the app never reads).
+# Every piece is pinned: downloads by SHA-256, sources by git commit. Each
+# helper runs on both Apple silicon and Intel Macs: ffmpeg and whisper.cpp
+# are built here from source once for each, then joined into one universal
+# program, using only what comes with macOS (VideoToolbox, Metal,
+# Accelerate), so the app needs nothing installed on the Mac it runs on,
+# Homebrew included. ffmpeg is built without GPL parts (it encodes with
+# VideoToolbox), under the LGPL, and without iconv (only for subtitle text,
+# which the app never reads).
 #
 # Everything is kept in a cache outside the repo, so this is slow only the
-# first time (building ffmpeg takes a few minutes) or after a version here
-# changes.
+# first time (building ffmpeg twice takes several minutes) or after a
+# version here changes.
 set -euo pipefail
 
 APP="${1:?usage: app/tools.sh <path to .app>}"
 CACHE="${SERMONCUT_TOOLS_CACHE:-$HOME/Library/Caches/org.ccikw.sermoncutter.build}"
+ARCHS=(arm64 x86_64)
 
 FFMPEG_TAG=n8.1.3
 FFMPEG_COMMIT=1041abdc962f4cc4f394aa8de9dc5236c0c3b9e7
 WHISPER_TAG=v1.9.5
 WHISPER_COMMIT=d1be6fde11ac6e0407606b4e42fe72d34add8037
 DENO_VERSION=2.9.8
-DENO_SHA=9f0bf660393da2eaff044cdc7444cb08c73f235849b61d224d825a194ce7c98e
+DENO_SHA_arm64=9f0bf660393da2eaff044cdc7444cb08c73f235849b61d224d825a194ce7c98e
+DENO_SHA_x86_64=4b2f5edd2639b7470f034238b321d7002d8dfb4726d8558f52c17afac370eb2c
+# yt-dlp_macos already holds both kinds of Mac in one program.
 YTDLP_VERSION=2026.10.21
 YTDLP_SHA=7a6fe71d7d680f1fb0ac18d4949873d77db2859e90017c0f44bd94b23be4ee40
 MODEL=ggml-small.en-q8_0.bin
@@ -40,9 +45,14 @@ export PATH=/usr/bin:/bin:/usr/sbin:/sbin
 unset CPATH C_INCLUDE_PATH CPLUS_INCLUDE_PATH LIBRARY_PATH CFLAGS CXXFLAGS CPPFLAGS LDFLAGS PKG_CONFIG_PATH || true
 export MACOSX_DEPLOYMENT_TARGET=14.0
 JOBS="$(sysctl -n hw.ncpu)"
+HOST="$(uname -m)"
 mkdir -p "$CACHE/dl"
 
 sha() { shasum -a 256 "$1" | cut -d' ' -f1; }
+
+# runs ARCH: whether this Mac can run programs built for ARCH (Intel ones
+# need Rosetta on Apple silicon).
+runs() { [ "$1" = "$HOST" ] || arch "-$1" /usr/bin/true 2>/dev/null; }
 
 # fetch URL FILE SHA256: downloads unless FILE is already there and right.
 fetch() {
@@ -58,7 +68,7 @@ fetch() {
   mv "$out.part" "$out"
 }
 
-# source TAG COMMIT REPO DIR: a fresh checkout of TAG, which must be COMMIT.
+# source_at TAG COMMIT REPO DIR: a fresh checkout of TAG, which must be COMMIT.
 source_at() {
   local tag="$1" commit="$2" repo="$3" dir="$4"
   rm -rf "$dir"
@@ -80,36 +90,76 @@ portable() {
   fi
 }
 
-ffmpeg_tools() {
-  local dir="$CACHE/ffmpeg-$FFMPEG_TAG"
+# universal OUT IN...: joins one program per kind of Mac into one.
+universal() {
+  local out="$1"; shift
+  lipo -create "$@" -output "$out.new"
+  mv "$out.new" "$out"
+}
+
+# nasm assembles ffmpeg's hand-tuned Intel code. Only a build tool: when this
+# Mac has none, the Intel ffmpeg is built without that code (it then decodes
+# slower, but works the same).
+nasm_bin() {
+  for n in /opt/homebrew/bin/nasm /usr/local/bin/nasm; do
+    if [ -x "$n" ]; then echo "$n"; return 0; fi
+  done
+  return 1
+}
+
+ffmpeg_arch() {
+  local arch="$1" dir="$CACHE/ffmpeg-$FFMPEG_TAG/$arch"
   if [ -x "$dir/ffmpeg" ] && [ -x "$dir/ffprobe" ]; then return 0; fi
-  echo "   building ffmpeg $FFMPEG_TAG (a few minutes, once)"
-  local src="$CACHE/src-ffmpeg" log="$CACHE/ffmpeg-build.log"
+  echo "   building ffmpeg $FFMPEG_TAG for $arch (a few minutes, once)"
+  local src="$CACHE/src-ffmpeg-$arch" log="$CACHE/ffmpeg-$arch.log" extra=() nasm
   source_at "$FFMPEG_TAG" "$FFMPEG_COMMIT" https://github.com/FFmpeg/FFmpeg "$src"
+  if [ "$arch" != "$HOST" ]; then extra+=(--enable-cross-compile --target-os=darwin); fi
+  if [ "$arch" = x86_64 ]; then
+    if nasm="$(nasm_bin)"; then
+      extra+=(--x86asmexe="$nasm")
+    else
+      extra+=(--disable-x86asm)
+      echo "   (no nasm on this Mac: the Intel ffmpeg goes without its hand-tuned code)"
+    fi
+  fi
   if ! (cd "$src" &&
-    ./configure --disable-autodetect \
+    ./configure --arch="$arch" ${extra[@]+"${extra[@]}"} --disable-autodetect \
       --enable-videotoolbox --enable-audiotoolbox --enable-securetransport \
       --enable-zlib --enable-bzlib \
       --disable-doc --disable-ffplay --disable-debug \
-      --extra-cflags="-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
-      --extra-ldflags="-mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" &&
+      --extra-cflags="-arch $arch -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" \
+      --extra-ldflags="-arch $arch -mmacosx-version-min=$MACOSX_DEPLOYMENT_TARGET" &&
     make -j"$JOBS" ffmpeg ffprobe) > "$log" 2>&1; then
-    echo "   ffmpeg didn't build; the end of $log:"
+    echo "   ffmpeg didn't build for $arch; the end of $log:"
     tail -25 "$log"
     return 1
   fi
   mkdir -p "$dir.new"
   cp "$src/ffmpeg" "$src/ffprobe" "$dir.new/"
-  local encoders
-  encoders="$("$dir.new/ffmpeg" -hide_banner -encoders 2>/dev/null)"
-  case "$encoders" in
-    *h264_videotoolbox*) ;;
-    *) echo "   this ffmpeg can't encode with VideoToolbox"; return 1 ;;
-  esac
+  if runs "$arch"; then
+    local encoders
+    encoders="$(arch "-$arch" "$dir.new/ffmpeg" -hide_banner -encoders 2>/dev/null)"
+    case "$encoders" in
+      *h264_videotoolbox*) ;;
+      *) echo "   this ffmpeg ($arch) can't encode with VideoToolbox"; return 1 ;;
+    esac
+  fi
   portable "$dir.new/ffmpeg" || return 1
   portable "$dir.new/ffprobe" || return 1
   rm -rf "$dir" && mv "$dir.new" "$dir"
   rm -rf "$src"
+}
+
+ffmpeg_tools() {
+  local top="$CACHE/ffmpeg-$FFMPEG_TAG"
+  # Builds from before Intel was added sit in the top folder: they're the arm64 ones.
+  if [ -x "$top/ffmpeg" ] && [ ! -d "$top/arm64" ]; then
+    mkdir -p "$top/arm64" && mv "$top/ffmpeg" "$top/ffprobe" "$top/arm64/"
+  fi
+  for a in "${ARCHS[@]}"; do ffmpeg_arch "$a"; done
+  for p in ffmpeg ffprobe; do
+    universal "$top/$p" "$top/arm64/$p" "$top/x86_64/$p"
+  done
 }
 
 cmake_bin() {
@@ -127,44 +177,71 @@ cmake_bin() {
   echo "$d/CMake.app/Contents/bin/cmake"
 }
 
-whisper_tool() {
-  local dir="$CACHE/whisper-$WHISPER_TAG"
+whisper_arch() {
+  local arch="$1" dir="$CACHE/whisper-$WHISPER_TAG/$arch"
   if [ -x "$dir/whisper-cli" ]; then return 0; fi
-  echo "   building whisper.cpp $WHISPER_TAG"
-  local src="$CACHE/src-whisper" log="$CACHE/whisper-build.log" cm
+  echo "   building whisper.cpp $WHISPER_TAG for $arch"
+  local src="$CACHE/src-whisper-$arch" log="$CACHE/whisper-$arch.log" cm cpu=()
   cm="$(cmake_bin)"
   source_at "$WHISPER_TAG" "$WHISPER_COMMIT" https://github.com/ggml-org/whisper.cpp "$src"
-  # Static, with the Metal shaders inside it, tuned for every Apple silicon
-  # chip (not just this one), and without OpenMP (not part of macOS).
+  # Tuned for every Mac of that kind, not just this one: Apple silicon from
+  # M1; Intel Macs that run macOS 14 all have AVX2.
+  if [ "$arch" = arm64 ]; then
+    cpu=(-DGGML_CPU_ARM_ARCH=armv8.4-a)
+  else
+    cpu=(-DGGML_AVX=ON -DGGML_AVX2=ON -DGGML_FMA=ON -DGGML_F16C=ON -DGGML_AVX512=OFF)
+  fi
+  # Static, with the Metal shaders inside it, and without OpenMP (not part of macOS).
   if ! ("$cm" -S "$src" -B "$src/build" -DCMAKE_BUILD_TYPE=Release \
-      -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET" \
+      -DCMAKE_OSX_ARCHITECTURES="$arch" -DCMAKE_OSX_DEPLOYMENT_TARGET="$MACOSX_DEPLOYMENT_TARGET" \
       -DCMAKE_IGNORE_PREFIX_PATH="/opt/homebrew;/usr/local" \
-      -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF -DGGML_CPU_ARM_ARCH=armv8.4-a \
+      -DBUILD_SHARED_LIBS=OFF -DGGML_NATIVE=OFF "${cpu[@]}" \
       -DGGML_METAL=ON -DGGML_METAL_EMBED_LIBRARY=ON -DGGML_OPENMP=OFF \
       -DWHISPER_BUILD_TESTS=OFF -DWHISPER_BUILD_SERVER=OFF -DWHISPER_SDL2=OFF -DWHISPER_CURL=OFF &&
     "$cm" --build "$src/build" --config Release --target whisper-cli -j "$JOBS") > "$log" 2>&1; then
-    echo "   whisper.cpp didn't build; the end of $log:"
+    echo "   whisper.cpp didn't build for $arch; the end of $log:"
     tail -25 "$log"
     return 1
   fi
   mkdir -p "$dir.new"
   cp "$src/build/bin/whisper-cli" "$dir.new/"
-  "$dir.new/whisper-cli" --help >/dev/null 2>&1 || { echo "   whisper-cli doesn't run"; return 1; }
+  if runs "$arch"; then
+    arch "-$arch" "$dir.new/whisper-cli" --help >/dev/null 2>&1 || { echo "   whisper-cli ($arch) doesn't run"; return 1; }
+  fi
   portable "$dir.new/whisper-cli" || return 1
   rm -rf "$dir" && mv "$dir.new" "$dir"
   rm -rf "$src"
 }
 
+whisper_tool() {
+  local top="$CACHE/whisper-$WHISPER_TAG"
+  if [ -x "$top/whisper-cli" ] && [ ! -d "$top/arm64" ]; then
+    mkdir -p "$top/arm64" && mv "$top/whisper-cli" "$top/arm64/"
+  fi
+  for a in "${ARCHS[@]}"; do whisper_arch "$a"; done
+  universal "$top/whisper-cli" "$top/arm64/whisper-cli" "$top/x86_64/whisper-cli"
+}
+
 deno_tool() {
-  local dir="$CACHE/deno-$DENO_VERSION"
-  if [ -x "$dir/deno" ]; then return 0; fi
-  fetch "https://github.com/denoland/deno/releases/download/v$DENO_VERSION/deno-aarch64-apple-darwin.zip" \
-    "$CACHE/dl/deno-$DENO_VERSION.zip" "$DENO_SHA"
-  rm -rf "$dir.new" && mkdir -p "$dir.new"
-  unzip -q "$CACHE/dl/deno-$DENO_VERSION.zip" -d "$dir.new"
-  "$dir.new/deno" --version >/dev/null || { echo "   deno doesn't run"; return 1; }
-  portable "$dir.new/deno" || return 1
-  rm -rf "$dir" && mv "$dir.new" "$dir"
+  local top="$CACHE/deno-$DENO_VERSION" a name want
+  if [ -x "$top/deno" ] && [ ! -d "$top/arm64" ]; then
+    mkdir -p "$top/arm64" && mv "$top/deno" "$top/arm64/"
+  fi
+  for a in "${ARCHS[@]}"; do
+    [ -x "$top/$a/deno" ] && continue
+    if [ "$a" = arm64 ]; then name=aarch64; else name=x86_64; fi
+    want="DENO_SHA_$a"
+    fetch "https://github.com/denoland/deno/releases/download/v$DENO_VERSION/deno-$name-apple-darwin.zip" \
+      "$CACHE/dl/deno-$DENO_VERSION-$a.zip" "${!want}"
+    rm -rf "$top/$a.new" && mkdir -p "$top/$a.new"
+    unzip -q "$CACHE/dl/deno-$DENO_VERSION-$a.zip" -d "$top/$a.new"
+    if runs "$a"; then
+      arch "-$a" "$top/$a.new/deno" --version >/dev/null || { echo "   deno ($a) doesn't run"; return 1; }
+    fi
+    portable "$top/$a.new/deno" || return 1
+    rm -rf "$top/$a" && mv "$top/$a.new" "$top/$a"
+  done
+  universal "$top/deno" "$top/arm64/deno" "$top/x86_64/deno"
 }
 
 ytdlp_tool() {
@@ -192,7 +269,7 @@ speech_model() {
   fetch "$MODEL_URL" "$f" "$MODEL_SHA"
 }
 
-echo "   ffmpeg $FFMPEG_TAG, whisper.cpp $WHISPER_TAG, deno $DENO_VERSION, yt-dlp $YTDLP_VERSION, $MODEL"
+echo "   ffmpeg $FFMPEG_TAG, whisper.cpp $WHISPER_TAG, deno $DENO_VERSION, yt-dlp $YTDLP_VERSION, $MODEL; for ${ARCHS[*]}"
 ffmpeg_tools
 whisper_tool
 deno_tool

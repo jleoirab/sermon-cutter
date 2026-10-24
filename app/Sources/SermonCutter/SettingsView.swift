@@ -21,22 +21,16 @@ struct SettingsView: View {
                 detail: "Each stream's sound and video while you work on it. The app keeps them in its own folder; there's no need to change this.",
                 url: app.folders.work
             ) { app.folders.work = $0 }
-            Spacer(minLength: 0)
-            Text(version)
-                .font(Brand.lato(12))
-                .foregroundStyle(Brand.text2)
+            UpdatesCard()
         }
         .padding(28)
-        .frame(width: 560, height: 470, alignment: .topLeading)
+        .frame(width: 560, alignment: .topLeading)
+        .fixedSize(horizontal: false, vertical: true)
         .background(Brand.paper)
         .font(Brand.lato(14))
         .foregroundStyle(Brand.text)
     }
 
-    private var version: String {
-        let v = Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String
-        return "CCI Sermon Cutter" + (v.map { " \($0)" } ?? "")
-    }
 }
 
 /// One folder: its name and where it is, Show in Finder and Change.

@@ -25,7 +25,21 @@ Building needs the Xcode Command Line Tools (Swift 5.9 or later), Rust and git. 
 - **yt-dlp keeps itself current.** YouTube keeps breaking old copies, so the app copies its yt-dlp to `~/Library/Application Support/CCI Sermon Cutter/bin` and lets it update itself about once a day (`sermoncut update-tools`). Everything else changes only with a new build of the app.
 - **Downloads and work files** go to `~/Library/Application Support/CCI Sermon Cutter/Work` (Settings can change it). Sundays started before in `~/Movies/SermonCutter` move there on the first launch; nothing else in that folder is touched.
 
-`app/tools.sh` pins every piece (downloads by SHA-256, sources by git commit) and keeps them in `~/Library/Caches/org.ccikw.sermoncutter.build`, so only the first build is slow (ffmpeg takes a few minutes to build). The app is built for Apple silicon. The app also carries its own fonts (Anton and Lato, both under the SIL Open Font License, in `app/Resources/Fonts`) and icon.
+`app/tools.sh` pins every piece (downloads by SHA-256, sources by git commit) and keeps them in `~/Library/Caches/org.ccikw.sermoncutter.build`, so only the first build is slow (ffmpeg takes a few minutes to build, once for each kind of Mac). Every program in the app is universal: it runs on Apple silicon and on Intel Macs with macOS 14 or later. Building for Intel needs `rustup target add x86_64-apple-darwin` once. The app also carries its own fonts (Anton and Lato, both under the SIL Open Font License, in `app/Resources/Fonts`) and icon.
+
+### Installing and updating
+
+The leads download **CCI Sermon Cutter.dmg** from the "CCI Sermon Cutter" folder on Google Drive (shared as "Anyone with the link"), open it and drag the app into Applications. The app isn't signed with a paid Apple Developer ID, so the first time it's opened macOS holds it back: they allow it once in System Settings › Privacy & Security › Open Anyway.
+
+After that the app keeps itself current. On launch (and twice a day while open) it reads `latest.json` from the same Drive folder. When there's a newer version it offers it on Home (Update or Later; also Check for Updates… in the app menu and Settings). Update downloads the installer from Drive, checks its size, its SHA-256 and the release key's Ed25519 signature, copies the new app out of it, swaps it in for the old one and reopens. The app downloads it itself, not a browser, so macOS doesn't hold the new version back. If the newest version needs a newer macOS than the Mac has, the app says so: there's only ever one version.
+
+To release:
+
+1. Put the new version in `app/VERSION` and a line on what's new in `app/release-notes.txt`. The build number counts commits, so it always goes up.
+2. Run `app/release.sh`. It builds, makes `build/release/CCI Sermon Cutter.dmg` and `latest.json`, and opens that folder and the Drive folder.
+3. Drag both files into the Drive folder and choose **Replace existing file** for each, so their links (in `app/release.conf`) stay the same.
+
+The release key lives in the build Mac's keychain as "CCI Sermon Cutter release key"; every build puts its public half in the app. Keep a copy of it somewhere safe (Keychain Access › File › Export Items…): without it, new versions can't be signed so that installed copies accept them, and everyone would have to download the installer again. Releases are also signed with a free, self-made certificate ("Sermon Cutter Dev", made by `app/signing-identity.sh`), so each new version keeps the permissions given to the last.
 
 - **Home** leads with this Sunday's stream (the newest Sunday, its 1st service), with Sundays already started beside it and the channel's other recent streams below. Paste any other stream's link in the toolbar. YouTube's titles are read as the sermon and the service ("Your Mountain", "1st service · Oct 11").
 - **Getting ready** downloads the audio, finds the sermon and checks the sound while the video downloads, then checks the picture; each step shows on the right. Everything is cached next to the downloads, so reopening a Sunday is instant.
@@ -38,7 +52,7 @@ Building needs the Xcode Command Line Tools (Swift 5.9 or later), Rust and git. 
 
 To check a screen without clicking through, put a file named `.show` in `~/Library/Application Support/CCI Sermon Cutter` with a YouTube id and a page (`iz0PPVUleUw quality`; pages are cut, quality, export, done and preview), or `home`, `light`, `dark` or `auto`.
 
-Still to come before the pilot: Drive upload, and signing (a Developer ID and Apple's notarization, so other Macs open it without a warning).
+Still to come before the pilot: Drive upload of the finished sermon.
 
 macOS asks once for access to Documents (where the Service folder lives). Builds are signed ad hoc, so each rebuild looks like a new app and asks again. To keep the answer across rebuilds, make a self-signed code-signing certificate named "Sermon Cutter Dev" in Keychain Access (Certificate Assistant → Create a Certificate…, type Code Signing); `build.sh` signs with it when it's there.
 

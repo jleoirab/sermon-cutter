@@ -4,16 +4,22 @@ import SermonCutterCore
 @main
 struct SermonCutterApp: App {
     @StateObject private var app = AppModel()
+    @StateObject private var updater = Updater()
 
     var body: some Scene {
         WindowGroup("CCI Sermon Cutter") {
             ContentView()
                 .environmentObject(app)
+                .environmentObject(updater)
+                .task { await updater.watch() }
                 .frame(minWidth: 1100, minHeight: 720)
         }
         .defaultSize(width: 1280, height: 820)
         .windowToolbarStyle(.unified(showsTitle: false))
         .commands {
+            CommandGroup(after: .appInfo) {
+                Button("Check for Updates…") { Task { await updater.check(userAsked: true) } }
+            }
             CommandGroup(replacing: .newItem) {
                 Button("Back to Home") { app.closeSunday() }
                     .keyboardShortcut("n")
@@ -23,6 +29,7 @@ struct SermonCutterApp: App {
         Settings {
             SettingsView()
                 .environmentObject(app)
+                .environmentObject(updater)
         }
     }
 }

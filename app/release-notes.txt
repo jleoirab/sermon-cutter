@@ -1,0 +1,1 @@
+Installs everything it needs and keeps itself up to date. Runs on Intel Macs too.
