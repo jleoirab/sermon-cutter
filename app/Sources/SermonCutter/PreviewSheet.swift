@@ -119,6 +119,12 @@ struct PreviewSheet: View {
                     }
                     .frame(width: 600, height: 338)
                     .clipShape(RoundedRectangle(cornerRadius: 14, style: .continuous))
+                    // Click the picture to play or pause, as in the main player.
+                    .overlay {
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture { ends.toggle() }
+                    }
                     .overlay(alignment: .topLeading) {
                         OverlayLabel(text: "As it will be exported", bold: false).padding(12)
                     }

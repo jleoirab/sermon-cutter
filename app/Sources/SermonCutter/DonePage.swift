@@ -23,6 +23,14 @@ struct DonePage: View {
                         if let image = poster ?? model.bannerImage {
                             BannerFrame(image: image)
                         }
+                        // A click anywhere on the picture plays it, not just
+                        // on the button; then the player's own controls take over.
+                        Color.clear
+                            .contentShape(Rectangle())
+                            .onTapGesture {
+                                playing = true
+                                player.play()
+                            }
                         Button {
                             playing = true
                             player.play()
