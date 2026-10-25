@@ -15,7 +15,7 @@ This is milestones 1 to 3 of the [Sermon Cutter PRD & Design Plan](https://claud
 ## The Mac app
 
 ```bash
-app/build.sh        # builds the engine and the app, installs ~/Applications/CCI Sermon Cutter.app
+app/build.sh        # builds the engine and the app, installs /Applications/CCI Sermon Cutter.app
 ```
 
 Building needs the Xcode Command Line Tools (Swift 5.9 or later), Rust and git. The app it makes needs nothing installed on the Mac it runs on: it carries everything inside it.

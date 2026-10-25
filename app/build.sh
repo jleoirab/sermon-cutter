@@ -1,6 +1,6 @@
 #!/bin/bash
 # Builds the engine and the Mac app, for Apple silicon and Intel Macs, and
-# installs "CCI Sermon Cutter.app" in ~/Applications. Run from anywhere:
+# installs "CCI Sermon Cutter.app" in /Applications. Run from anywhere:
 #   app/build.sh
 # A release (app/release.sh, or a file named .release in the repo) also makes
 # the installer and latest.json, ready to put on Google Drive.
@@ -167,14 +167,21 @@ for NAME in "$APP_NAME" "$OLD_NAME"; do
     pkill -f "$NAME.app/Contents/MacOS/" 2>/dev/null
   fi
 done
-mkdir -p "$HOME/Applications"
-rm -rf "$HOME/Applications/$APP_NAME.app"
-cp -cR "$OUT" "$HOME/Applications/" 2>/dev/null || cp -R "$OUT" "$HOME/Applications/"
-echo "installed: ~/Applications/$APP_NAME.app"
-# The copy built under the old name goes to the Trash, so there's one app.
-if [ -d "$HOME/Applications/$OLD_NAME.app" ]; then
-  mv "$HOME/Applications/$OLD_NAME.app" "$HOME/.Trash/$OLD_NAME $(date +%H%M%S).app" && echo "moved the old $OLD_NAME.app to the Trash"
-fi
+# Into the main Applications folder, where the leads' copies go too (the one
+# in Finder's sidebar), or the home folder's own if this account can't write
+# there.
+DEST_DIR="/Applications"
+[ -w "$DEST_DIR" ] || { DEST_DIR="$HOME/Applications"; mkdir -p "$DEST_DIR"; }
+rm -rf "$DEST_DIR/$APP_NAME.app"
+cp -cR "$OUT" "$DEST_DIR/" 2>/dev/null || cp -R "$OUT" "$DEST_DIR/"
+echo "installed: $DEST_DIR/$APP_NAME.app"
+# Copies elsewhere, from earlier builds or under the old name, go to the
+# Trash, so there's one app.
+for OLD in "$HOME/Applications/$APP_NAME.app" "$HOME/Applications/$OLD_NAME.app" "/Applications/$OLD_NAME.app"; do
+  if [ -d "$OLD" ] && [ "$OLD" != "$DEST_DIR/$APP_NAME.app" ]; then
+    mv "$OLD" "$HOME/.Trash/$(basename "$OLD" .app) $(date +%H%M%S).app" && echo "moved the copy in $(dirname "$OLD") to the Trash"
+  fi
+done
 
 if [ "${RUN_TESTS:-0}" = "1" ]; then
   echo "== tests"
