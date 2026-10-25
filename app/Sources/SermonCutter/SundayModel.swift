@@ -227,7 +227,14 @@ final class SundayModel: ObservableObject {
             try await check(includePicture: true)
         } catch is CancellationError {
         } catch {
-            set(current, .failed(error.localizedDescription))
+            if YouTubeSignIn.handle(error, engine: engine) {
+                // YouTube wanted proof this isn't a robot: go again with the
+                // browser's YouTube sign-in.
+                set(current, .running(nil), detail: "signing in to YouTube")
+                await runPrepare()
+                return
+            }
+            set(current, .failed(YouTubeSignIn.isRobotCheck(error) ? YouTubeSignIn.advice : error.localizedDescription))
         }
     }
 
@@ -248,7 +255,7 @@ final class SundayModel: ObservableObject {
         return URL(fileURLWithPath: file)
     }
 
-    private func fetchVideoQuietly(_ id: String) async -> URL? {
+    private func fetchVideoQuietly(_ id: String, again: Bool = false) async -> URL? {
         do {
             let v = try await fetch(id, part: "video")
             // Show the picture as soon as it's here, even mid-analysis.
@@ -257,7 +264,11 @@ final class SundayModel: ObservableObject {
             loadMedia()
             return v
         } catch {
-            set("video", .failed(error.localizedDescription))
+            if !again, YouTubeSignIn.isRobotCheck(error),
+               YouTubeSignIn.current != nil || YouTubeSignIn.handle(error, engine: engine) {
+                return await fetchVideoQuietly(id, again: true)
+            }
+            set("video", .failed(YouTubeSignIn.isRobotCheck(error) ? YouTubeSignIn.advice : error.localizedDescription))
             return nil
         }
     }

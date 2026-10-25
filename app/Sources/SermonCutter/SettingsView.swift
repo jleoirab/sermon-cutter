@@ -21,6 +21,7 @@ struct SettingsView: View {
                 detail: "Each stream's sound and video while you work on it. The app keeps them in its own folder; there's no need to change this.",
                 url: app.folders.work
             ) { app.folders.work = $0 }
+            YouTubeCard()
             UpdatesCard()
         }
         .padding(28)
@@ -31,6 +32,52 @@ struct SettingsView: View {
         .foregroundStyle(Brand.text)
     }
 
+}
+
+/// Which browser's YouTube sign-in yt-dlp borrows when YouTube asks this
+/// Mac to prove it isn't a robot. The app picks one the first time YouTube
+/// asks; this changes or stops it.
+struct YouTubeCard: View {
+    @EnvironmentObject var app: AppModel
+    @AppStorage(YouTubeSignIn.key) private var browser = ""
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Eyebrow("YouTube")
+            HStack(spacing: 12) {
+                Image(systemName: "person.crop.circle.badge.checkmark")
+                    .font(.system(size: 18))
+                    .foregroundStyle(Brand.coral)
+                VStack(alignment: .leading, spacing: 2) {
+                    Text(browser.isEmpty ? "Not signed in" : "Using your \(YouTubeSignIn.name(browser)) sign-in")
+                        .font(Brand.lato(15, .black))
+                    Text(browser.isEmpty
+                         ? "Turns on by itself if YouTube asks whether this Mac is a robot."
+                         : "Stay signed in to YouTube in \(YouTubeSignIn.name(browser)).")
+                        .font(Brand.lato(12))
+                        .foregroundStyle(Brand.text2)
+                        .fixedSize(horizontal: false, vertical: true)
+                }
+                Spacer(minLength: 8)
+                Menu(browser.isEmpty ? "Choose" : "Change") {
+                    ForEach(YouTubeSignIn.installed, id: \.ytdlp) { b in
+                        Button(b.name) { if let e = app.engine { YouTubeSignIn.turnOn(b.ytdlp, engine: e) } }
+                    }
+                    if !browser.isEmpty {
+                        Divider()
+                        Button("Don't use a sign-in") { YouTubeSignIn.turnOff(engine: app.engine) }
+                    }
+                }
+                .menuStyle(.borderlessButton)
+                .fixedSize()
+                .font(Brand.lato(13, .bold))
+                .foregroundStyle(Brand.coral)
+            }
+            .well()
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .card(radius: 20, padding: 18)
+    }
 }
 
 /// One folder: its name and where it is, Show in Finder and Change.

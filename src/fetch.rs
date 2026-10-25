@@ -64,9 +64,37 @@ pub struct StreamInfo {
     pub best_h264_height: Option<u64>,
 }
 
+/// How the engine's error starts when YouTube wants a signed-in visit to
+/// prove this isn't a robot, so the app can recognise it and use the
+/// browser's YouTube sign-in.
+pub const BOT_CHECK: &str = "YouTube wants a sign-in to show this isn't a robot";
+
+/// The browser whose YouTube sign-in yt-dlp borrows (chrome, firefox, ...),
+/// when the app has set one.
+pub const COOKIES_ENV: &str = "SERMONCUT_COOKIES_FROM_BROWSER";
+
+/// yt-dlp's options for borrowing `browser`'s YouTube sign-in.
+pub fn cookies_args(browser: Option<OsString>) -> Vec<OsString> {
+    match browser.filter(|b| !b.is_empty()) {
+        Some(b) => vec!["--cookies-from-browser".into(), b],
+        None => vec![],
+    }
+}
+
+/// The error for a failed yt-dlp call: YouTube's robot check in words the
+/// app knows, anything else with yt-dlp's own last lines.
+pub fn ytdlp_failed(what: &str, stderr: &str) -> anyhow::Error {
+    if stderr.contains("Sign in to confirm") || stderr.contains("not a bot") {
+        anyhow::anyhow!("{BOT_CHECK}. yt-dlp could not {what}.")
+    } else {
+        anyhow::anyhow!("yt-dlp could not {what}: {}", run::tail(stderr, 4))
+    }
+}
+
 /// Options every yt-dlp call gets.
 fn common_args(tools: &Tools) -> Vec<OsString> {
     let mut a: Vec<OsString> = vec!["--no-playlist".into()];
+    a.extend(cookies_args(std::env::var_os(COOKIES_ENV)));
     if let Some(deno) = &tools.deno {
         // YouTube's JavaScript challenges need a runtime; Deno is yt-dlp's recommended one.
         a.push("--js-runtimes".into());
@@ -91,7 +119,7 @@ pub fn info(tools: &Tools, url: &str) -> Result<StreamInfo> {
     );
     let out = run::capture(tools.ytdlp()?, &args)?;
     if !out.ok {
-        bail!("yt-dlp could not read {url}: {}", run::tail(&out.stderr, 4));
+        return Err(ytdlp_failed(&format!("read {url}"), &out.stderr));
     }
     parse_info(&out.stdout)
 }
@@ -155,10 +183,7 @@ pub fn streams(tools: &Tools, page: &str, count: usize) -> Result<Vec<StreamEntr
     );
     let out = run::capture(tools.ytdlp()?, &args)?;
     if !out.ok {
-        bail!(
-            "yt-dlp could not list {page}: {}",
-            run::tail(&out.stderr, 4)
-        );
+        return Err(ytdlp_failed(&format!("list {page}"), &out.stderr));
     }
     parse_streams(&out.stdout)
 }
@@ -324,15 +349,12 @@ pub fn download(
         }
     })?;
     if !ok {
-        bail!(
-            "yt-dlp could not download the {}: {}",
-            if part == Part::Audio {
-                "audio"
-            } else {
-                "video"
-            },
-            run::tail(&stderr, 4)
-        );
+        let what = if part == Part::Audio {
+            "download the audio"
+        } else {
+            "download the video"
+        };
+        return Err(ytdlp_failed(what, &stderr));
     }
     let file = file.context("yt-dlp finished without saying where it saved the file")?;
     if !file.exists() {
@@ -408,6 +430,26 @@ mod tests {
         assert!(p.finished);
         assert_eq!(p.fraction, Some(1.0));
         assert!(parse_progress("[download] 10%").is_none());
+    }
+
+    #[test]
+    fn youtube_s_robot_check_is_named_and_the_browser_sign_in_passed_on() {
+        let e = ytdlp_failed(
+            "read https://www.youtube.com/watch?v=aVgNFiM9ruc",
+            "ERROR: [youtube] aVgNFiM9ruc: Sign in to confirm you\u{2019}re not a bot. This helps protect our community.",
+        );
+        assert!(e.to_string().starts_with(BOT_CHECK), "{e}");
+        let e = ytdlp_failed("list the channel", "ERROR: Unable to download webpage");
+        assert!(e.to_string().contains("Unable to download webpage"), "{e}");
+        assert_eq!(
+            cookies_args(Some("chrome".into())),
+            vec![
+                OsString::from("--cookies-from-browser"),
+                OsString::from("chrome")
+            ]
+        );
+        assert!(cookies_args(Some("".into())).is_empty());
+        assert!(cookies_args(None).is_empty());
     }
 
     #[test]

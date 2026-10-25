@@ -60,7 +60,9 @@ final class AppModel: ObservableObject {
             return
         }
         engineMissing = false
-        engine = Engine(executable: exe, environment: Engine.environment())
+        var env = Engine.environment()
+        if let b = YouTubeSignIn.current { env[YouTubeSignIn.envKey] = b }
+        engine = Engine(executable: exe, environment: env)
     }
 
     /// For checking the screens without clicking through them: a file named
@@ -137,11 +139,18 @@ final class AppModel: ObservableObject {
         loadingStreams = true
         streamsError = nil
         defer { loadingStreams = false }
-        do {
-            streams = try await engine.run(["streams", "--count", "8"]).result("streams", as: StreamList.self).streams
-            streamsLoaded = true
-        } catch {
-            streamsError = error.localizedDescription
+        for attempt in 0..<2 {
+            do {
+                streams = try await engine.run(["streams", "--count", "8"]).result("streams", as: StreamList.self).streams
+                streamsLoaded = true
+                return
+            } catch {
+                // YouTube wanted proof this isn't a robot: once, go again
+                // with the browser's YouTube sign-in.
+                if attempt == 0, YouTubeSignIn.handle(error, engine: engine) { continue }
+                streamsError = YouTubeSignIn.isRobotCheck(error) ? YouTubeSignIn.advice : error.localizedDescription
+                return
+            }
         }
     }
 
