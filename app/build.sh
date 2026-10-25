@@ -121,7 +121,8 @@ bash "$ROOT/app/tools.sh" "$OUT" || { echo "the helpers couldn't be put in the a
 if [ "$RELEASE" = "1" ]; then bash "$ROOT/app/signing-identity.sh" || echo "(couldn't make the signing certificate; signing ad hoc)"; fi
 IDENTITY="$(security find-identity -p codesigning 2>/dev/null | grep '"Sermon Cutter Dev"' | head -1 | awk '{print $2}')"
 codesign --force --deep --sign "${IDENTITY:--}" "$OUT" >> "$FULL" 2>&1 || echo "(signing failed; the app still runs from this Mac)"
-echo "signed: ${IDENTITY:+Sermon Cutter Dev}${IDENTITY:-ad hoc}; version $SHORT_VERSION (build $BUILD_NUMBER)"
+if [ -n "$IDENTITY" ]; then SIGNER="Sermon Cutter Dev"; else SIGNER="ad hoc"; fi
+echo "signed: $SIGNER; version $SHORT_VERSION (build $BUILD_NUMBER)"
 
 # Each helper still runs once signed, and the engine finds every one of them
 # inside the app with nothing else on the PATH (no Homebrew).
