@@ -383,8 +383,7 @@ struct SavedRow: View {
             RunningChip(model: running)
         } else if let p = sunday.exportPath, fm.fileExists(atPath: p) {
             Chip(text: "Exported", foreground: Brand.goodFg, background: Brand.goodBg)
-        } else if sunday.cutIn != nil, sunday.bannerPath != nil,
-                  let v = sunday.videoFile, fm.fileExists(atPath: v) {
+        } else if sunday.cutIn != nil, let v = sunday.videoFile, fm.fileExists(atPath: v) {
             Chip(text: "Ready to export", foreground: Brand.tonalFg, background: Brand.tonalBg)
         } else {
             Chip(text: "Not finished")

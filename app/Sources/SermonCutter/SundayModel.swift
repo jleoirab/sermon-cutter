@@ -54,6 +54,9 @@ final class SundayModel: ObservableObject {
     /// The banner, read once for the thumbnail, the player and the preview.
     @Published var bannerImage: NSImage?
     @Published var bannerUnreadable = false
+    /// Getting the stream's YouTube thumbnail, which is the banner.
+    @Published var thumbnail: ThumbnailState = .idle
+    enum ThumbnailState: Equatable { case idle, fetching, failed }
     /// Snapshots across the cut, for the timeline on Quality and Export.
     @Published var filmstrip: [NSImage] = []
     /// "opening" or "closing" while Preview the ends is open.
@@ -149,7 +152,11 @@ final class SundayModel: ObservableObject {
             if let f = videoProgress { return "Waiting for the video to download (\(Int(f * 100))%)." }
             return "Waiting for the video to download."
         }
-        if sunday.bannerPath == nil { return "Add this Sunday's banner in step 1 first." }
+        if sunday.bannerPath == nil {
+            return thumbnail == .failed
+                ? "Couldn't get the stream's YouTube thumbnail for the banner. Try again in step 1."
+                : "Getting the banner from YouTube."
+        }
         return nil
     }
 
@@ -196,13 +203,9 @@ final class SundayModel: ObservableObject {
             set("info", .done, detail: sunday.date.map(Naming.display) ?? sunday.info?.title)
             guard let id = sunday.id else { throw EngineError.failed(step: "info", message: "That doesn't look like a YouTube link.") }
             try FileManager.default.createDirectory(at: folders.work, withIntermediateDirectories: true)
-            if sunday.bannerPath == nil, let d = sunday.date {
-                let folders = self.folders
-                if let b = await Task.detached(operation: { folders.suggestedBanner(d) }).value {
-                    sunday.bannerPath = b.path
-                    save()
-                }
-            }
+            // The banner is the stream's YouTube thumbnail; it comes down
+            // alongside everything else.
+            tasks.append(Task { await self.fetchThumbnail() })
 
             current = "audio"
             let audio = try await fetch(id, part: "audio")
@@ -472,34 +475,38 @@ final class SundayModel: ObservableObject {
 
     // MARK: - The banner
 
-    /// Downloads a banner shared on Google Drive with "anyone with the link".
-    func fetchBanner(from link: String) async throws {
-        guard let fileID = DriveLink.fileID(link) else {
-            throw EngineError.failed(step: "banner", message: "That isn't a Google Drive file link.")
+    /// The banner is the stream's YouTube thumbnail. Gets it, best size
+    /// first, unless it's here already (`again` gets it anyway). A Sunday set
+    /// up with a banner of its own switches to the thumbnail.
+    func fetchThumbnail(again: Bool = false) async {
+        guard let id = sunday.id, thumbnail != .fetching else { return }
+        let file = folders.thumbnail(id)
+        if !again, sunday.bannerPath == file.path, FileManager.default.fileExists(atPath: file.path) { return }
+        thumbnail = .fetching
+        for url in YouTubeThumbnail.candidates(id) {
+            if Task.isCancelled { break }
+            let request = URLRequest(url: url, cachePolicy: .reloadIgnoringLocalCacheData, timeoutInterval: 20)
+            guard let got = try? await URLSession.shared.data(for: request),
+                  (got.1 as? HTTPURLResponse)?.statusCode == 200
+            else { continue }
+            let data = got.0
+            guard let jpeg = await Task.detached(operation: { YouTubeThumbnail.banner(from: data) }).value else { continue }
+            do {
+                try FileManager.default.createDirectory(at: folders.work, withIntermediateDirectories: true)
+                try jpeg.write(to: file, options: .atomic)
+            } catch {
+                break
+            }
+            sunday.bannerPath = file.path
+            save()
+            thumbnail = .idle
+            await loadBanner()
+            return
         }
-        let (data, response) = try await URLSession.shared.data(from: DriveLink.downloadURL(fileID))
-        let type = (response as? HTTPURLResponse)?.value(forHTTPHeaderField: "Content-Type") ?? ""
-        guard type.hasPrefix("image/") else {
-            throw EngineError.failed(
-                step: "banner",
-                message: "Drive didn't hand over an image. Share the banner with “Anyone with the link”, or download it and drop the file here."
-            )
-        }
-        let ext = type.contains("png") ? "png" : type.contains("webp") ? "webp" : "jpg"
-        let base = sunday.id ?? "banner"
-        let file = folders.work.appendingPathComponent("\(base).banner.\(ext)")
-        try FileManager.default.createDirectory(at: folders.work, withIntermediateDirectories: true)
-        try data.write(to: file, options: .atomic)
-        setBanner(file)
+        thumbnail = Task.isCancelled ? .idle : .failed
     }
 
-    func setBanner(_ url: URL) {
-        sunday.bannerPath = url.path
-        save()
-    }
-
-    /// Reads the banner off the main thread: the first read of a file in
-    /// Documents waits for macOS to ask for permission.
+    /// Reads the banner off the main thread.
     func loadBanner() async {
         bannerImage = nil
         bannerUnreadable = false

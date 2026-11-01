@@ -121,6 +121,8 @@ public struct Folders: Equatable, Sendable {
     public func wordsCache(_ id: String) -> URL { file(id, "words.json") }
     public func pictureCache(_ id: String) -> URL { file(id, "picture.json") }
     public func saved(_ id: String) -> URL { file(id, "sunday.json") }
+    /// The stream's YouTube thumbnail, which is the banner.
+    public func thumbnail(_ id: String) -> URL { file(id, "thumbnail.jpg") }
 
     /// Service/Oct 11th 2026
     public func sundayFolder(_ date: Date) -> URL {
@@ -130,14 +132,6 @@ public struct Folders: Equatable, Sendable {
     /// Service/Oct 11th 2026/Oct 11th Sermon.mp4
     public func sermonFile(_ date: Date) -> URL {
         sundayFolder(date).appendingPathComponent(Naming.fileName(date))
-    }
-
-    /// An image already in the Sunday's folder, if there's exactly one.
-    public func suggestedBanner(_ date: Date) -> URL? {
-        let dir = sundayFolder(date)
-        let names = (try? FileManager.default.contentsOfDirectory(atPath: dir.path)) ?? []
-        let images = names.filter { ["png", "jpg", "jpeg", "webp"].contains(($0 as NSString).pathExtension.lowercased()) }
-        return images.count == 1 ? dir.appendingPathComponent(images[0]) : nil
     }
 
     public func save(_ sunday: Sunday) throws {
@@ -159,25 +153,6 @@ public struct Folders: Equatable, Sendable {
         return names.filter { $0.hasSuffix(".sunday.json") }
             .compactMap { load(String($0.dropLast(".sunday.json".count))) }
             .sorted { ($0.info?.uploadDate ?? "") > ($1.info?.uploadDate ?? "") }
-    }
-}
-
-/// Google Drive links to a single file.
-public enum DriveLink {
-    /// The file id in links like drive.google.com/file/d/<id>/view,
-    /// drive.google.com/open?id=<id> or docs.google.com/uc?id=<id>.
-    public static func fileID(_ link: String) -> String? {
-        guard let comps = URLComponents(string: link.trimmingCharacters(in: .whitespacesAndNewlines)),
-              let host = comps.host, host.hasSuffix("google.com")
-        else { return nil }
-        let parts = comps.path.split(separator: "/").map(String.init)
-        if let i = parts.firstIndex(of: "d"), i + 1 < parts.count { return parts[i + 1] }
-        return comps.queryItems?.first(where: { $0.name == "id" })?.value
-    }
-
-    /// Where a file shared with "anyone with the link" downloads from.
-    public static func downloadURL(_ id: String) -> URL {
-        URL(string: "https://drive.google.com/uc?export=download&id=\(id)")!
     }
 }
 

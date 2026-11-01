@@ -73,10 +73,12 @@ final class CoreTests: XCTestCase {
         XCTAssertEqual(m.minimumMacOSName, "macOS 15.2")
     }
 
-    func testDriveLinks() {
-        XCTAssertEqual(DriveLink.fileID("https://drive.google.com/file/d/1AbC_x-9/view?usp=sharing"), "1AbC_x-9")
-        XCTAssertEqual(DriveLink.fileID("https://drive.google.com/open?id=1AbC"), "1AbC")
-        XCTAssertNil(DriveLink.fileID("https://example.com/file/d/1AbC/view"))
+    func testThumbnailsAreCroppedTo16x9() {
+        XCTAssertEqual(YouTubeThumbnail.crop16x9(width: 1280, height: 720), CGRect(x: 0, y: 0, width: 1280, height: 720))
+        XCTAssertEqual(YouTubeThumbnail.crop16x9(width: 480, height: 360), CGRect(x: 0, y: 45, width: 480, height: 270))
+        XCTAssertEqual(YouTubeThumbnail.crop16x9(width: 640, height: 480), CGRect(x: 0, y: 60, width: 640, height: 360))
+        XCTAssertEqual(YouTubeThumbnail.crop16x9(width: 1000, height: 400), CGRect(x: 144, y: 0, width: 711, height: 400))
+        XCTAssertEqual(YouTubeThumbnail.candidates("abc").first?.absoluteString, "https://i.ytimg.com/vi/abc/maxresdefault.jpg")
     }
 
     func testDecodesEngineResults() throws {

@@ -5,7 +5,7 @@
 1. It downloads a stream from YouTube, audio first and then H.264 video.
 2. It finds where the sermon starts and ends, from the sound and the words, with no chapters needed.
 3. It checks the stream's sound and picture over the sermon and grades it Good, Usable but tell the leads, or Not usable.
-4. It cuts the sermon and lays the Sunday banner over both ends, with dissolves and audio fades.
+4. It cuts the sermon and lays the stream's YouTube thumbnail over both ends as the banner, with dissolves and audio fades.
 5. It checks the exported file before anyone uploads it.
 
 It runs the same on macOS and Windows. The Mac app, and a Windows app later, drive it as a command-line tool and read its progress as JSON.
@@ -44,7 +44,7 @@ The release key lives in the build Mac's keychain as "CCI Sermon Cutter release 
 - **Home** leads with this Sunday's stream (the newest Sunday, its 1st service), with Sundays already started beside it and the channel's other recent streams below. Paste any other stream's link in the toolbar. YouTube's titles are read as the sermon and the service ("Your Mountain", "1st service · Oct 11").
 - **Getting ready** downloads the audio, finds the sermon and checks the sound while the video downloads, then checks the picture; each step shows on the right. Everything is cached next to the downloads, so reopening a Sunday is instant.
 - **Review** is three steps in the same window, the player and timeline on the left and the step on the right:
-  - **1 · Cut**: the whole service as music and speech, with Start and End to drag (the player follows) and quality minute by minute under the cut. On the right: Start and End with how sure they are, nudges and typed times, how much worship is kept, the words heard at the end with "please be seated" highlighted (click a word to end there), and the banner (dropped, chosen, from a Drive link shared with anyone, or found already in the Sunday's Service folder).
+  - **1 · Cut**: the whole service as music and speech, with Start and End to drag (the player follows) and quality minute by minute under the cut. On the right: Start and End with how sure they are, nudges and typed times, how much worship is kept, the words heard at the end with "please be seated" highlighted (click a word to end there), and the banner, which is the stream's YouTube thumbnail: the app gets it by itself while the Sunday gets ready (the 1280x720 one when YouTube has it, otherwise a smaller one with its black bars cropped off), so there's nothing to add.
   - **Preview the ends** plays the first or last 20 seconds with the banner and fades worked out as it plays; drag a dot on the tracks to change a hold, the dissolve or a fade and it plays again from just before it.
   - **2 · Quality**: the verdict, minute by minute, each problem (click to listen) and Copy a note for the leads.
   - **3 · Export** writes Service/<date>/<date> Sermon.mp4 (for example "Oct 11th 2026/Oct 11th Sermon.mp4") and self-checks it. Quality and Export show only the cut, with snapshots of the video, and play it with the banner and fades. Going back Home while it exports lets it carry on.

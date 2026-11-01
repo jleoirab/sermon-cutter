@@ -1,6 +1,5 @@
 import AppKit
 import SwiftUI
-import UniformTypeIdentifiers
 import SermonCutterCore
 
 /// Step 1, on the right: Start, End and the banner. Until every
@@ -475,115 +474,38 @@ struct FlowLayout: Layout {
 
 // MARK: - Banner
 
+/// The banner: the stream's YouTube thumbnail, which the app gets by
+/// itself, fitted over both ends of the cut.
 struct BannerCard: View {
     @ObservedObject var model: SundayModel
-    @State private var choosing = false
-    @State private var targeted = false
-    @State private var pastingLink = false
-    @State private var link = ""
-    @State private var fetching = false
-    @State private var linkError: String?
 
     var body: some View {
-        Group {
-            if model.sunday.bannerPath == nil {
-                empty
-            } else {
-                chosen
-            }
-        }
-        .overlay(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(targeted ? Brand.coral : .clear, lineWidth: 2)
-        )
-        .dropDestination(for: URL.self) { urls, _ in
-            guard let url = urls.first(where: { BannerCard.isImage($0) }) else { return false }
-            model.setBanner(url)
-            return true
-        } isTargeted: { targeted = $0 }
-        .fileImporter(isPresented: $choosing, allowedContentTypes: [.png, .jpeg, .webP, .image]) { result in
-            if case .success(let url) = result { model.setBanner(url) }
-        }
-        .popover(isPresented: $pastingLink, arrowEdge: .bottom) {
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Paste the banner's Google Drive link").font(Brand.lato(13, .black))
-                HStack {
-                    TextField("https://drive.google.com/…", text: $link)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 260)
-                        .onSubmit(fetch)
-                        .onChange(of: link) { linkError = nil }
-                    if fetching {
-                        ProgressView().controlSize(.small)
-                    } else {
-                        Button("Get", action: fetch)
-                            .buttonStyle(PillButtonStyle(kind: .primary, size: .small))
-                            .disabled(DriveLink.fileID(link) == nil)
-                    }
-                }
-                if let linkError {
-                    Text(linkError).font(Brand.lato(12)).foregroundStyle(Brand.badFg)
-                        .fixedSize(horizontal: false, vertical: true)
-                        .frame(width: 320, alignment: .leading)
-                }
-            }
-            .padding(16)
-        }
-    }
-
-    private var empty: some View {
-        VStack(alignment: .leading, spacing: 8) {
-            Eyebrow("Banner")
-            Text("Add this Sunday's banner").font(Brand.lato(14, .black))
-            Text("Drop the image here, choose the file, or paste its Google Drive link.")
-                .font(Brand.lato(13))
-                .foregroundStyle(Brand.text2)
-                .fixedSize(horizontal: false, vertical: true)
-            HStack(spacing: 8) {
-                Button("Choose a file…") { choosing = true }
-                    .buttonStyle(PillButtonStyle(kind: .primary, size: .small))
-                Button("Paste a Drive link…") { pastingLink = true }
-                    .buttonStyle(PillButtonStyle(kind: .outline, size: .small))
-            }
-        }
-        .frame(maxWidth: .infinity, alignment: .leading)
-        .padding(14)
-        .background(
-            RoundedRectangle(cornerRadius: 16, style: .continuous)
-                .strokeBorder(Brand.outline, style: StrokeStyle(lineWidth: 1.5, dash: [5, 4]))
-        )
-    }
-
-    private var chosen: some View {
         HStack(spacing: 12) {
-            thumbnail
+            picture
                 .frame(width: 112, height: 63)
                 .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
             VStack(alignment: .leading, spacing: 3) {
                 Eyebrow("Banner")
-                Text((model.sunday.bannerPath.map { ($0 as NSString).lastPathComponent }) ?? "")
-                    .font(Brand.lato(13))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                if model.bannerUnreadable {
-                    Text("Couldn't open it. Choose it again, or allow Documents in System Settings › Privacy & Security › Files and Folders.")
+                switch model.thumbnail {
+                case .fetching:
+                    Text("Getting the stream's thumbnail from YouTube…")
+                        .font(Brand.lato(13))
+                        .foregroundStyle(Brand.text2)
+                case .failed:
+                    Text("Couldn't get the stream's thumbnail from YouTube. Is this Mac online?")
                         .font(Brand.lato(12))
                         .foregroundStyle(Brand.warnFg)
                         .fixedSize(horizontal: false, vertical: true)
-                } else if model.bannerImage == nil {
-                    SlowNote(text: "Waiting for macOS. If it asks to let CCI Sermon Cutter open Documents, choose Allow.")
+                case .idle:
+                    Text(model.bannerUnreadable ? "Couldn't open the thumbnail." : "The stream's YouTube thumbnail")
+                        .font(Brand.lato(13))
+                        .foregroundStyle(model.bannerUnreadable ? Brand.warnFg : Brand.text)
                 }
                 HStack(spacing: 14) {
-                    Menu {
-                        Button("Choose a file…") { choosing = true }
-                        Button("Paste a Google Drive link…") { pastingLink = true }
-                    } label: {
-                        Text("Replace")
+                    if model.thumbnail == .failed || model.bannerUnreadable {
+                        Button("Try again") { Task { await model.fetchThumbnail(again: true) } }
+                            .buttonStyle(LinkButtonStyle())
                     }
-                    .menuStyle(.button)
-                    .buttonStyle(LinkButtonStyle())
-                    .menuIndicator(.hidden)
-                    .fixedSize()
                     Button("Preview the ends ›") { model.endsPreview = "opening" }
                         .buttonStyle(LinkButtonStyle())
                         .disabled(!model.hasVideo || model.bannerImage == nil)
@@ -595,40 +517,19 @@ struct BannerCard: View {
         .well()
     }
 
-    @ViewBuilder private var thumbnail: some View {
+    @ViewBuilder private var picture: some View {
         if let image = model.bannerImage {
             BannerFrame(image: image)
-        } else if model.bannerUnreadable {
+        } else if model.thumbnail == .failed || model.bannerUnreadable {
             Image(systemName: "exclamationmark.triangle")
                 .foregroundStyle(Brand.warnFg)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Brand.warnBg)
-                .help("Couldn't open the banner. If you said no when macOS asked about Documents, turn it on in System Settings › Privacy & Security › Files and Folders, or choose the banner again.")
         } else {
             BannerWaiting()
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Brand.card)
         }
-    }
-
-    private func fetch() {
-        guard DriveLink.fileID(link) != nil, !fetching else { return }
-        fetching = true
-        linkError = nil
-        Task {
-            do {
-                try await model.fetchBanner(from: link)
-                link = ""
-                pastingLink = false
-            } catch {
-                linkError = error.localizedDescription
-            }
-            fetching = false
-        }
-    }
-
-    static func isImage(_ url: URL) -> Bool {
-        ["png", "jpg", "jpeg", "webp"].contains(url.pathExtension.lowercased())
     }
 }
 
@@ -636,30 +537,5 @@ struct BannerCard: View {
 struct BannerWaiting: View {
     var body: some View {
         ProgressView().controlSize(.small)
-    }
-}
-
-/// A note that only appears if something takes more than a moment. For the
-/// banner that most likely means macOS is waiting for an answer about
-/// Documents.
-struct SlowNote: View {
-    let text: String
-    @State private var slow = false
-
-    var body: some View {
-        VStack(alignment: .leading, spacing: 0) {
-            // Always something here, so the timer starts even before the note shows.
-            Color.clear.frame(width: 0, height: 0)
-            if slow {
-                Text(text)
-                    .font(Brand.lato(12))
-                    .foregroundStyle(Brand.text2)
-                    .fixedSize(horizontal: false, vertical: true)
-            }
-        }
-        .task {
-            try? await Task.sleep(for: .seconds(3))
-            if !Task.isCancelled { slow = true }
-        }
     }
 }
